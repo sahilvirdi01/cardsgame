@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const fs = require('fs');
 const http = require('http');
 const crypto = require('crypto');
 const express = require('express');
@@ -39,6 +40,57 @@ function sanitizeRules(input) {
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: '*' } });
+
+/**
+ * Reaction GIFs are auto-discovered from public/gifs, so adding or replacing a
+ * GIF is just a matter of dropping a file in that folder. `manifest.json` is
+ * optional and only supplies nicer labels/ordering for files that exist;
+ * entries pointing at missing files are ignored and new files are appended.
+ */
+const GIF_DIR = path.join(__dirname, 'public', 'gifs');
+/** Thulla GIFs live directly in /gifs; the Bhabhi/loser GIFs in /gifs/bhabhi. */
+const BHABHI_GIF_DIR = path.join(GIF_DIR, 'bhabhi');
+const GIF_EXT = /\.(gif|webp|apng|png|jpe?g)$/i;
+
+function gifLabel(name) {
+  return name.replace(/\.[^.]+$/, '').replace(/[-_]+/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/** Auto-discover images in `dir`; manifest.json (if present) overrides labels/order. */
+function listGifs(dir, urlBase) {
+  let listed = [];
+  try {
+    const parsed = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+    listed = (Array.isArray(parsed) ? parsed : parsed.gifs || [])
+      .map((g) => (typeof g === 'string' ? { file: g } : g))
+      .filter((g) => g && g.file)
+      .map((g) => { const name = path.basename(g.file); return { name, label: g.label || gifLabel(name) }; });
+  } catch (e) { /* manifest is optional */ }
+
+  let files = [];
+  try {
+    files = fs.readdirSync(dir).filter((f) => GIF_EXT.test(f));
+  } catch (e) { files = []; }
+
+  const seen = new Set();
+  const out = [];
+  for (const entry of listed) {
+    if (files.includes(entry.name) && !seen.has(entry.name)) {
+      seen.add(entry.name);
+      out.push({ file: `${urlBase}/${entry.name}`, label: entry.label });
+    }
+  }
+  for (const name of files.sort((a, b) => a.localeCompare(b))) {
+    if (!seen.has(name)) out.push({ file: `${urlBase}/${name}`, label: gifLabel(name) });
+  }
+  return out;
+}
+
+app.get('/gifs/index.json', (_req, res) => res.json({
+  gifs: listGifs(GIF_DIR, '/gifs'),
+  bhabhi: listGifs(BHABHI_GIF_DIR, '/gifs/bhabhi'),
+}));
 
 app.use(express.static(path.join(__dirname, 'public')));
 app.get('/healthz', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
@@ -105,6 +157,7 @@ function broadcastState(room, events = []) {
     if (!p.socketId) continue;
     io.to(p.socketId).emit('state', { view: room.game.viewFor(p.id), events });
   }
+  if (events.some((e) => e.type === 'gameover')) emitRematch(room);
 }
 
 function roomOf(socket) {
@@ -206,6 +259,7 @@ function removePlayer(room, playerId) {
     if (s) s.leave(room.id);
   }
   room.players.delete(playerId);
+  room.rematch.delete(playerId);
   io.to(room.id).emit('peerLeft', { id: playerId });
   if (room.players.size === 0) {
     cleanupRoom(room);
@@ -215,6 +269,52 @@ function removePlayer(room, playerId) {
     room.hostId = room.players.keys().next().value;
   }
   broadcastLobby(room);
+  if (room.game && room.game.over) {
+    emitRematch(room);
+    maybeStartRematch(room);
+  }
+}
+
+/* --------------------------------------------------------------- rematch */
+
+/** Players currently present (holding a live socket). */
+function connectedPlayers(room) {
+  return [...room.players.values()].filter((p) => p.connected !== false && p.socketId);
+}
+
+function rematchPayload(room) {
+  const needed = connectedPlayers(room).map((p) => p.id);
+  const votes = [...room.rematch].filter((id) => needed.includes(id));
+  return { votes, total: needed.length, ready: votes.length, need: MIN_PLAYERS };
+}
+
+function emitRematch(room) {
+  io.to(room.id).emit('rematchState', rematchPayload(room));
+}
+
+/** Deal a fresh game to everyone still in the room (used by start + rematch). */
+function startGame(room) {
+  if (room.players.size < MIN_PLAYERS) return false;
+  const players = [...room.players.values()].map((p) => ({ id: p.id, nickname: p.nickname }));
+  room.game = new BhabhiGame(players, { rules: room.rules });
+  room.started = true;
+  room.rematch = new Set();
+  // Away players (no live socket) get auto-played; everyone else plays normally.
+  for (const p of room.players.values()) p.auto = !(p.connected && p.socketId);
+  io.to(room.id).emit('gameStart');
+  broadcastLobby(room);
+  broadcastState(room, [{ type: 'deal', numDecks: room.game.numDecks }]);
+  maybeAutoPlay(room);
+  return true;
+}
+
+/** Start the rematch once every present player has agreed. */
+function maybeStartRematch(room) {
+  if (!room.game || !room.game.over) return;
+  const needed = connectedPlayers(room).map((p) => p.id);
+  if (needed.length < MIN_PLAYERS) return;
+  if (!needed.every((id) => room.rematch.has(id))) return;
+  startGame(room);
 }
 
 /* ----------------------------------------------------------------- socket */
@@ -254,6 +354,7 @@ io.on('connection', (socket) => {
       broadcastLobby(room);
       sendChatHistory(socket, room);
       if (room.game) socket.emit('state', { view: room.game.viewFor(p.id), events: [] });
+      if (room.game && room.game.over) emitRematch(room);
       return;
     }
 
@@ -273,6 +374,7 @@ io.on('connection', (socket) => {
         rules: {},
         autoTimer: null,
         chat: [],
+        rematch: new Set(),
       };
       rooms.set(id, room);
       created = true;
@@ -301,6 +403,7 @@ io.on('connection', (socket) => {
     if (ack) ack({ ok: true, roomId: room.id, playerId: id, nickname, created, started: !!room.game });
     broadcastLobby(room);
     sendChatHistory(socket, room);
+    if (room.game && room.game.over) emitRematch(room);
   });
 
   socket.on('setRules', (msg) => {
@@ -324,14 +427,19 @@ io.on('connection', (socket) => {
       return;
     }
     if (msg && msg.rules) room.rules = sanitizeRules(msg.rules);
-    const players = [...room.players.values()].map((p) => ({ id: p.id, nickname: p.nickname }));
-    room.game = new BhabhiGame(players, { rules: room.rules });
-    room.started = true;
-    for (const p of room.players.values()) p.auto = false;
-    io.to(room.id).emit('gameStart');
-    broadcastLobby(room);
-    broadcastState(room, [{ type: 'deal', numDecks: room.game.numDecks }]);
-    maybeAutoPlay(room);
+    startGame(room);
+  });
+
+  // A player agrees to a rematch after the game ends.
+  socket.on('rematch', () => {
+    const room = roomOf(socket);
+    if (!room || !room.game || !room.game.over) return;
+    const player = room.players.get(socket.data.playerId);
+    if (!player) return;
+    if (room.rematch.has(player.id)) room.rematch.delete(player.id);
+    else room.rematch.add(player.id);
+    emitRematch(room);
+    maybeStartRematch(room);
   });
 
   socket.on('playCard', (msg) => {
@@ -359,6 +467,7 @@ io.on('connection', (socket) => {
     clearAutoTimer(room);
     room.game = null;
     room.started = false;
+    room.rematch = new Set();
     // Drop anyone who is still gone before heading back to the lobby.
     for (const p of [...room.players.values()]) {
       if (!p.connected || !p.socketId) removePlayer(room, p.id);

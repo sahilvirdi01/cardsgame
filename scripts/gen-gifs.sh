@@ -51,24 +51,9 @@ make_gif "ez.gif"        "EZ"       "#123b12" "#b6ff7a" "#ffffff"
 make_gif "sad.gif"       "SAD"      "#101820" "#7fb2ff" "#ffffff"
 make_gif "gigachad.gif"  "CHAD"     "#1a1a1a" "#d4af37" "#ffffff"
 
-# manifest consumed by the client
-cat > "$OUT/manifest.json" <<'JSON'
-[
-  { "file": "/gifs/thulla.gif",   "label": "Classic Thulla" },
-  { "file": "/gifs/thulla-2.gif", "label": "Thulla 2" },
-  { "file": "/gifs/bruh.gif",     "label": "Bruh" },
-  { "file": "/gifs/lol.gif",      "label": "LOL" },
-  { "file": "/gifs/oof.gif",      "label": "Oof" },
-  { "file": "/gifs/gg.gif",       "label": "GG" },
-  { "file": "/gifs/rip.gif",      "label": "RIP" },
-  { "file": "/gifs/noob.gif",     "label": "Noob" },
-  { "file": "/gifs/whoa.gif",     "label": "Whoa" },
-  { "file": "/gifs/ohno.gif",     "label": "Oh no" },
-  { "file": "/gifs/bonk.gif",     "label": "Bonk" },
-  { "file": "/gifs/ez.gif",       "label": "EZ" },
-  { "file": "/gifs/sad.gif",      "label": "Sad" },
-  { "file": "/gifs/gigachad.gif", "label": "Chad" }
-]
-JSON
-echo "  created manifest.json"
+# NOTE: this only writes the placeholder GIF art above. It deliberately does
+# NOT touch public/gifs/manifest.json, so your custom labels (and any GIFs you
+# replaced) are never clobbered. The server auto-discovers every file in the
+# folder, and manifest.json is used only to override labels/order.
 echo "Done."
+echo "Add or replace GIFs by dropping files into: $OUT"

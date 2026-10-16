@@ -187,6 +187,12 @@
           </div>
         </div>
 
+        <div id="rematchBar" class="rematch-bar hidden">
+          <button id="rematchBtn" class="btn btn-primary">Play Again</button>
+          <span id="rematchStatus" class="rematch-status">0/0 ready</span>
+          <button id="backToLobby2Btn" class="btn btn-sm hidden">Back to lobby</button>
+        </div>
+
         <div class="your-area">
           <div class="your-line">
             <span id="turnBanner" class="turn-banner">Waiting…</span>
@@ -244,11 +250,14 @@
     <img id="goGif" alt="" class="go-gif">
     <h2 id="goLoser">—</h2>
     <p class="muted">is the last one holding cards 😂</p>
+    <div class="go-lb-head">Leaderboard</div>
     <ol id="goWinners" class="go-winners"></ol>
     <div class="go-actions">
-      <button id="playAgainBtn" class="btn btn-primary hidden">Play Again</button>
+      <button id="playAgainBtn" class="btn btn-primary">Play Again</button>
+      <button id="backToLobbyBtn" class="btn hidden">Back to lobby</button>
       <button id="leave2Btn" class="btn">Leave</button>
     </div>
+    <div class="go-hint">Closes in 10s — everyone must tap Play Again to start.</div>
   </div>
 </div>
 

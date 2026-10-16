@@ -68,14 +68,16 @@ npm run test:e2e      # boots the real server and plays full games
 │   │   ├── webrtc.js    # Peer-to-peer audio/video mesh
 │   │   ├── soundboard.js
 │   │   └── animations.js
-│   ├── gifs/            # Reaction GIFs + manifest
+│   ├── gifs/            # Thulla reaction GIFs (auto-discovered)
+│   │   └── bhabhi/      # Loser/Bhabhi GIFs shown on the game-over screen
 │   └── sounds/          # Meme sounds + manifest
 ├── scripts/
 │   └── gen-gifs.sh      # Regenerate the GIF reaction library (needs ImageMagick)
 └── test/
     ├── engine.js        # Deterministic engine tests
     ├── e2e.js           # Full multiplayer end-to-end test
-    └── reconnect.js     # Drop-out grace period, auto-play & seat reclaim
+    ├── reconnect.js     # Drop-out grace period, auto-play & seat reclaim
+    └── rematch.js       # Unanimous Play-Again voting + GIF endpoint
 ```
 
 ## How to play
@@ -89,6 +91,29 @@ npm run test:e2e      # boots the real server and plays full games
 7. Empty your hand to escape safely — the last player still holding cards is the Bhabhi.
 
 Ranking is **A > K > Q > J > 10 > … > 2**.
+
+## Customizing the reaction GIFs
+
+The reaction GIFs are auto-discovered, so you never edit code or JSON:
+
+- **Thulla GIFs** (mid-game `THULLA!` popups) live in `public/gifs/`.
+- **Bhabhi GIFs** (the loser shown on the game-over screen) live in
+  `public/gifs/bhabhi/`. If that folder is empty, the Thulla pool is used.
+
+For either set:
+
+- **Add:** drop a `.gif` (or `.webp`/`.apng`/`.png`/`.jpg`) file into the folder.
+- **Replace:** overwrite the existing file with your own, keeping the same name.
+- **Remove:** delete the file.
+
+The server builds the lists fresh on every page load (`GET /gifs/index.json`), so just
+refresh the browser. Labels default to the filename (e.g. `thulla-time.gif` becomes
+"Thulla Time").
+
+To set custom labels or control order, optionally add a `manifest.json` in the
+relevant folder — it only overrides label/order for files that exist; missing entries
+are ignored and unlisted files are still included. Note: `npm run gen:gifs` only
+regenerates placeholder art into `public/gifs/` and never touches `manifest.json`.
 
 ## Deployment
 

@@ -7,10 +7,11 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "gen:gifs": "bash scripts/gen-gifs.sh",
-    "test": "node test/engine.js && node test/e2e.js && node test/reconnect.js",
+    "test": "node test/engine.js && node test/e2e.js && node test/reconnect.js && node test/rematch.js",
     "test:engine": "node test/engine.js",
     "test:e2e": "node test/e2e.js",
-    "test:reconnect": "node test/reconnect.js"
+    "test:reconnect": "node test/reconnect.js",
+    "test:rematch": "node test/rematch.js"
   },
   "keywords": [
     "bhabhi",

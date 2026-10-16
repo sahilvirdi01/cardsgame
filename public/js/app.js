@@ -410,7 +410,12 @@
     location.href = '/';
   }
   ['#leaveBtn', '#lobbyLeaveBtn', '#leave2Btn'].forEach((s) => $(s) && $(s).addEventListener('click', leave));
-  $('#playAgainBtn').addEventListener('click', () => socket.emit('restart'));
+  // Play Again = agree to a rematch; it starts in place once everyone agrees.
+  $('#playAgainBtn').addEventListener('click', voteRematch);
+  $('#rematchBtn') && $('#rematchBtn').addEventListener('click', voteRematch);
+  // Host-only escape hatch back to the lobby (to change rules or add players).
+  $('#backToLobbyBtn') && $('#backToLobbyBtn').addEventListener('click', () => socket.emit('restart'));
+  $('#backToLobby2Btn') && $('#backToLobby2Btn').addEventListener('click', () => socket.emit('restart'));
 
   /* ---------------- socket events ---------------- */
   socket.on('connect', () => {
@@ -454,6 +459,10 @@
 
   socket.on('gameStart', async () => {
     closeEl($('#gameOverOverlay'));
+    APP.gameOver = false;
+    APP.rematch = { votes: [], total: 0, ready: 0, need: 2 };
+    clearTimeout(goTimer);
+    renderRematch();
     APP.ready = false;
     APP.prevHandIds = null;
     showScreen('game');
@@ -474,17 +483,27 @@
       };
     });
     WebRTC.syncPeers(view.players.map((p) => p.id));
+    APP.gameOver = !!view.over;
     if (!APP.ready) { APP.pending = { view, events }; return; }
     renderGame(view, events);
+    renderRematch();
   });
+
+  socket.on('rematchState', (s) => { APP.rematch = s; renderRematch(); });
 
   socket.on('backToLobby', () => {
     closeEl($('#gameOverOverlay'));
+    APP.gameOver = false;
+    clearTimeout(goTimer);
+    renderRematch();
     showScreen('lobby');
     toast('Back to the lobby');
   });
   socket.on('gameAborted', ({ reason }) => {
     closeEl($('#gameOverOverlay'));
+    APP.gameOver = false;
+    clearTimeout(goTimer);
+    renderRematch();
     showScreen('lobby');
     toast(reason || 'Game aborted', 'error');
   });
@@ -650,12 +669,8 @@
       pile.appendChild(el);
     });
 
-    const sweep = events.find((e) => e.type === 'sweep');
-    const pickup = events.find((e) => e.type === 'pickup');
-    if (sweep) pile.classList.add('anim-sweep');
-    if (pickup) {
-      pile.classList.add('anim-pickup', 'flash-red');
-    }
+    // Pickup (→ seat) and sweep (→ Saar) are animated by handleEvent with
+    // flying clones that clear the pile immediately, so no CSS fade is needed.
 
     // Saar — the stack of used/discarded cards (bottom-right of the felt)
     const saarCount = view.discardCount;
@@ -787,10 +802,14 @@
         seat.classList.add('hit');
         setTimeout(() => seat.classList.remove('hit'), 800);
       }
+      // Slide the whole pile into the collector's deck.
+      Anim.flyPileAway($('#pile'), seat, { duration: 620, stagger: 42, scale: 0.35, rotate: 14 });
     }
     if (ev.type === 'sweep') {
       const seat = document.querySelector(`.seat[data-player-id="${ev.winnerId}"]`);
       if (seat) seat.classList.add('flash-red');
+      // Slide the beaten trick into the Saar pile.
+      Anim.flyPileAway($('#pile'), $('#saarStack') || $('#saar'), { duration: 600, stagger: 42, scale: 0.5 });
     }
     if (ev.type === 'out') {
       ev.playerIds.forEach((id) => {
@@ -803,6 +822,8 @@
     if (ev.type === 'reenter') {
       const name = playerName(ev.playerId);
       toast(idIsYou(ev.playerId, view) ? 'You drew a card from the Saar and are back in!' : `${name} is back in from the Saar!`, 'sound');
+      const seat = document.querySelector(`.seat[data-player-id="${ev.playerId}"]`);
+      Anim.flyCardFromTo($('#saarStack') || $('#saar'), seat, { duration: 560 });
     }
     if (ev.type === 'gameover') {
       showGameOver(ev, view, players);
@@ -813,26 +834,87 @@
     return !!(view && view.you && id === view.you.id);
   }
 
-  function showGameOver(ev, view, players) {
+  let goTimer = null;
+
+  function showGameOver(ev, view) {
     closeEl($('#thullaOverlay'));
-    const loser = ev.loserId === view.you.id ? 'YOU' : playerName(ev.loserId);
-    $('#goLoser').textContent = loser === 'YOU' ? 'You are the Bhabhi!' : loser;
-    const gif = Anim.randomGif();
+    APP.gameOver = true;
+    $('#goLoser').textContent = ev.loserId === view.you.id ? 'You are the Bhabhi!' : playerName(ev.loserId);
+
+    // A dedicated Bhabhi/loser GIF (from /gifs/bhabhi), not the Thulla set.
+    const gif = Anim.randomBhabhiGif();
     const img = $('#goGif');
-    if (gif) { img.src = gif.file; img.style.display = ''; img.onerror = () => img.style.display = 'none'; }
+    if (gif) { img.src = gif.file; img.style.display = ''; img.onerror = () => { img.style.display = 'none'; }; }
     else img.style.display = 'none';
 
+    // Leaderboard: escape order first (winner → …), the Bhabhi dead last.
     const ol = $('#goWinners');
     ol.innerHTML = '';
-    ev.winners.forEach((id, i) => {
+    const order = [...(ev.winners || [])];
+    if (ev.loserId && !order.includes(ev.loserId)) order.push(ev.loserId);
+    if (!order.length) order.push(ev.loserId);
+    order.forEach((id, i) => {
       const li = document.createElement('li');
-      li.textContent = `#${i + 1} ${playerName(id)}${id === view.you.id ? ' (you)' : ''}`;
+      const you = id === view.you.id ? ' (you)' : '';
+      if (i === order.length - 1) {
+        li.className = 'go-loser-row';
+        li.textContent = `💀 ${playerName(id)}${you} — Bhabhi`;
+      } else {
+        li.textContent = `#${i + 1} ${playerName(id)}${you}`;
+      }
       ol.appendChild(li);
     });
-    $('#playAgainBtn').classList.toggle('hidden', !APP.isHost);
+
+    APP.rematch = APP.rematch || { votes: [], total: 0, ready: 0, need: 2 };
+    renderRematch();
     openEl($('#gameOverOverlay'));
     Soundboard.play('sadtrombone');
+
+    // Leaderboard fades by itself after 10s (or on tap); the Play-Again bar stays.
+    clearTimeout(goTimer);
+    goTimer = setTimeout(hideGameOverOverlay, 10000);
+    $('#gameOverOverlay').onclick = hideGameOverOverlay;
   }
+
+  function hideGameOverOverlay() {
+    clearTimeout(goTimer);
+    closeEl($('#gameOverOverlay'));
+    renderRematch();
+  }
+
+  function renderRematch() {
+    const bar = $('#rematchBar');
+    const voted = !!((APP.rematch && APP.rematch.votes) || []).includes(APP.selfId);
+    const r = APP.rematch || { votes: [], total: 0, ready: 0, need: 2 };
+    const btnLabel = voted ? 'Ready ✓ — tap to cancel' : 'Play Again';
+
+    if (!APP.gameOver) {
+      if (bar) bar.classList.add('hidden');
+    } else if (bar) {
+      bar.classList.remove('hidden');
+    }
+    const overlayBtn = $('#playAgainBtn');
+    if (overlayBtn) {
+      overlayBtn.textContent = btnLabel;
+      overlayBtn.classList.toggle('on', voted);
+    }
+    const barBtn = $('#rematchBtn');
+    if (barBtn) {
+      barBtn.textContent = btnLabel;
+      barBtn.classList.toggle('on', voted);
+    }
+    $('#backToLobbyBtn') && $('#backToLobbyBtn').classList.toggle('hidden', !APP.isHost);
+    $('#backToLobby2Btn') && $('#backToLobby2Btn').classList.toggle('hidden', !APP.isHost);
+
+    const status = $('#rematchStatus');
+    if (status) {
+      if (r.total < (r.need || 2)) status.textContent = `Waiting for players… (${r.total}/${r.need || 2})`;
+      else if (voted) status.textContent = `Waiting for others… ${r.ready}/${r.total} ready`;
+      else status.textContent = `${r.ready}/${r.total} ready — tap Play Again`;
+    }
+  }
+
+  function voteRematch() { if (APP.gameOver) socket.emit('rematch'); }
 
   /* ---------------- boot ---------------- */
   (async function boot() {
