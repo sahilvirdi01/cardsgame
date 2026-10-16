@@ -110,6 +110,7 @@
         <div id="lobbyChatLog" class="chat-log"></div>
         <form id="lobbyChatForm" class="chat-form">
           <input id="lobbyChatInput" maxlength="200" placeholder="Say hi while you wait…" autocomplete="off">
+          <button type="button" class="emoji-btn" aria-label="Insert emoji" title="Emoji">😊</button>
           <button class="btn btn-sm" type="submit">Send</button>
         </form>
       </div>
@@ -209,12 +210,16 @@
         <div id="chatLog" class="chat-log"></div>
         <form id="chatForm" class="chat-form">
           <input id="chatInput" maxlength="200" placeholder="Say something…" autocomplete="off">
+          <button type="button" class="emoji-btn" aria-label="Insert emoji" title="Emoji">😊</button>
           <button class="btn btn-sm" type="submit">Send</button>
         </form>
       </div>
     </aside>
   </section>
 </div>
+
+<!-- ===================== EMOJI PICKER ===================== -->
+<div id="emojiPicker" class="emoji-picker hidden"></div>
 
 <!-- ===================== SOUNDBOARD ===================== -->
 <div id="soundboard" class="soundboard hidden">
@@ -276,6 +281,7 @@
 </div>
 
 <div id="toasts" class="toasts"></div>
+<div id="chatToasts" class="chat-toasts"></div>
 
 <!-- ===================== REMOTE AUDIO SINK ===================== -->
 <div id="audioSink" style="display:none"></div>

@@ -369,13 +369,95 @@
       input.value = '';
     });
   });
-  socket.on('chat', ({ nickname, text }) => {
-    addChat(`<b>${esc(nickname)}:</b> ${esc(text)}`);
+  // Each player gets a unique nickname colour (assigned by the server).
+  const safeColor = (c) => (typeof c === 'string' && /^#[0-9a-fA-F]{3,8}$/.test(c) ? c : '');
+  function chatHTML(nickname, text, color) {
+    const c = safeColor(color);
+    const name = c ? `<b style="color:${c}">${esc(nickname)}</b>` : `<b>${esc(nickname)}</b>`;
+    return `${name}: ${esc(text)}`;
+  }
+  // Pop a message in on the top-right when the chat panel is closed.
+  function chatPopup(entry) {
+    if (!entry || (entry.from && entry.from === APP.selfId)) return;
+    const sidebar = $('#sidebar');
+    if (sidebar && sidebar.classList.contains('open')) return;
+    const wrap = $('#chatToasts');
+    if (!wrap) return;
+    const el = document.createElement('div');
+    el.className = 'chat-toast';
+    el.innerHTML = chatHTML(entry.nickname, entry.text, entry.color);
+    wrap.appendChild(el);
+    while (wrap.children.length > 4) wrap.firstChild.remove();
+    setTimeout(() => {
+      el.style.transition = 'opacity .3s, transform .3s';
+      el.style.opacity = '0';
+      el.style.transform = 'translateX(18px)';
+      setTimeout(() => el.remove(), 320);
+    }, 3800);
+  }
+  socket.on('chat', (entry) => {
+    addChat(chatHTML(entry.nickname, entry.text, entry.color));
+    chatPopup(entry);
   });
+
+  /* ---------------- emoji picker ---------------- */
+  const CHAT_EMOJIS = [
+    '😀', '😁', '😂', '🤣', '😊', '😍', '😘', '😎',
+    '🤩', '🥳', '😇', '🙃', '😉', '😅', '😆', '🤔',
+    '🤨', '😐', '😴', '😪', '😢', '😭', '😡', '🤬',
+    '😱', '🥶', '🤯', '😈', '💀', '🤡', '🙄', '😜',
+    '🤝', '🙏', '👏', '👍', '👎', '👋', '✌️', '🤞',
+    '💪', '🫡', '👀', '🖕', '🔥', '💯', '🎉', '🎊',
+    '❤️', '🧡', '💛', '💚', '💙', '💜', '🖤', '💔',
+    '✨', '⭐', '⚡', '💥', '🃏', '🎴', '🍾', '🥂',
+  ];
+  (function setupEmojiPicker() {
+    const picker = $('#emojiPicker');
+    if (!picker) return;
+    picker.innerHTML = CHAT_EMOJIS.map((e) => `<button type="button" data-emoji="${e}">${e}</button>`).join('');
+    let activeInput = null;
+
+    function insert(emoji) {
+      const input = activeInput || document.activeElement;
+      if (!input || input.tagName !== 'INPUT') return;
+      const start = typeof input.selectionStart === 'number' ? input.selectionStart : input.value.length;
+      const end = typeof input.selectionEnd === 'number' ? input.selectionEnd : input.value.length;
+      input.value = input.value.slice(0, start) + emoji + input.value.slice(end);
+      const caret = start + emoji.length;
+      input.focus();
+      try { input.setSelectionRange(caret, caret); } catch (e) { /* ignore */ }
+    }
+
+    picker.addEventListener('click', (e) => {
+      const b = e.target.closest('[data-emoji]');
+      if (b) insert(b.dataset.emoji);
+    });
+
+    $$('.emoji-btn').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        activeInput = btn.closest('.chat-form')?.querySelector('input') || null;
+        if (!picker.classList.contains('hidden')) { picker.classList.add('hidden'); return; }
+        picker.classList.remove('hidden');
+        const r = btn.getBoundingClientRect();
+        picker.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+        picker.style.left = 'auto';
+        picker.style.bottom = (window.innerHeight - r.top + 8) + 'px';
+        picker.style.top = 'auto';
+      });
+    });
+
+    document.addEventListener('click', (e) => {
+      if (picker.classList.contains('hidden')) return;
+      if (e.target.closest('#emojiPicker') || e.target.closest('.emoji-btn')) return;
+      picker.classList.add('hidden');
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') picker.classList.add('hidden'); });
+  })();
   // Replay the room's backlog so a reconnecting player hasn't missed anything.
   socket.on('chatHistory', ({ messages }) => {
     $$('.chat-log').forEach((log) => { log.innerHTML = ''; });
-    (messages || []).forEach((m) => addChat(`<b>${esc(m.nickname)}:</b> ${esc(m.text)}`));
+    (messages || []).forEach((m) => addChat(chatHTML(m.nickname, m.text, m.color)));
   });
   $('#chatBtn').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
   $('#chatFootBtn').addEventListener('click', () => $('#sidebar').classList.toggle('open'));

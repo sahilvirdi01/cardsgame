@@ -214,7 +214,24 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 .chat-line b{color:var(--gold)}
 .chat-line.sys{color:var(--muted);font-style:italic}
 .chat-form{display:flex;gap:.4rem;margin-top:.6rem}
-.chat-form input{flex:1;padding:.55rem .7rem;font-size:.9rem}
+.chat-form input{flex:1;padding:.55rem .7rem;font-size:.9rem;min-width:0}
+.emoji-btn{
+  flex:none;width:38px;height:38px;border-radius:9px;border:1px solid var(--border);
+  background:var(--panel2);color:var(--ink);font-size:1.15rem;line-height:1;cursor:pointer;transition:.12s;
+}
+.emoji-btn:hover{background:rgba(245,197,66,.18);transform:translateY(-1px)}
+.emoji-btn:active{transform:translateY(1px) scale(.96)}
+.emoji-picker{
+  position:fixed;z-index:70;width:min(304px,90vw);display:grid;grid-template-columns:repeat(8,1fr);
+  gap:.2rem;padding:.5rem;max-height:236px;overflow-y:auto;scrollbar-width:thin;
+  background:var(--panel);border:1px solid var(--border);border-radius:14px;box-shadow:var(--shadow);
+  backdrop-filter:blur(10px);
+}
+.emoji-picker button{
+  border:none;background:transparent;font-size:1.3rem;line-height:1;padding:.28rem;
+  border-radius:8px;cursor:pointer;
+}
+.emoji-picker button:hover{background:rgba(245,197,66,.22)}
 
 /* ---------- table ---------- */
 .table-wrap{display:flex;flex-direction:column;min-height:0;position:relative}
@@ -471,6 +488,13 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 .toast.error{border-color:var(--red);color:#ffb4b6}
 .toast.sound{border-color:var(--gold)}
 @keyframes toastIn{0%{opacity:0;transform:translateY(-14px)}100%{opacity:1;transform:none}}
+.chat-toasts{position:fixed;top:4.4rem;right:1rem;z-index:80;display:flex;flex-direction:column;
+  align-items:flex-end;gap:.4rem;max-width:min(340px,82vw);pointer-events:none}
+.chat-toast{background:rgba(4,17,11,.94);border:1px solid var(--border);color:var(--ink);
+  padding:.5rem .8rem;border-radius:12px;font-size:.85rem;box-shadow:var(--shadow);
+  max-width:100%;overflow-wrap:anywhere;animation:chatToastIn .28s ease both}
+.chat-toast b{font-weight:700}
+@keyframes chatToastIn{0%{opacity:0;transform:translateX(22px)}100%{opacity:1;transform:none}}
 
 /* ---------- lobby chat ---------- */
 .lobby-chat{grid-column:1 / -1;display:flex;flex-direction:column}

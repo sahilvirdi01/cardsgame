@@ -128,6 +128,19 @@ function uniqueName(room, name) {
   return `${name} ${i}`;
 }
 
+/** Distinct nickname colours (readable on the dark theme); one per player. */
+const CHAT_COLORS = [
+  '#ff6b6b', '#ff9f43', '#ffd93d', '#6bcb77', '#4dd4ac',
+  '#4dabf7', '#845ef7', '#f783ac', '#e599f7', '#ffa8a8',
+];
+
+/** Give each player a colour that no one else in the room is currently using. */
+function pickChatColor(room) {
+  const used = new Set([...room.players.values()].map((p) => p.color));
+  for (const c of CHAT_COLORS) if (!used.has(c)) return c;
+  return CHAT_COLORS[room.players.size % CHAT_COLORS.length];
+}
+
 function lobbyPayload(room) {
   return {
     roomId: room.id,
@@ -138,6 +151,7 @@ function lobbyPayload(room) {
     players: [...room.players.values()].map((p) => ({
       id: p.id,
       nickname: p.nickname,
+      color: p.color,
       mic: !!p.mic,
       cam: !!p.cam,
       isHost: p.id === room.hostId,
@@ -407,7 +421,8 @@ io.on('connection', (socket) => {
     const id = makePlayerId();
     const nickname = uniqueName(room, cleanName(msg.nickname, `Player ${room.players.size + 1}`));
     room.players.set(id, {
-      id, nickname, mic: false, cam: false, connected: true, auto: false, socketId: socket.id,
+      id, nickname, color: pickChatColor(room),
+      mic: false, cam: false, connected: true, auto: false, socketId: socket.id,
     });
     socket.data.roomId = room.id;
     socket.data.playerId = id;
@@ -523,6 +538,7 @@ io.on('connection', (socket) => {
     const entry = {
       from: socket.data.playerId,
       nickname: sender ? sender.nickname : '?',
+      color: sender ? sender.color : CHAT_COLORS[0],
       text,
       ts: Date.now(),
     };
