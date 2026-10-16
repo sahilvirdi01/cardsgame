@@ -746,6 +746,7 @@
       return;
     }
     Soundboard.unlock();
+    Soundboard.sfx('card');
     socket.emit('playCard', { cardId: card.id });
   }
 
@@ -785,14 +786,20 @@
       toast(me ? 'You are away — a random card was auto-played for you'
         : `${playerName(ev.playerId)} is away — auto-played a card`, 'error');
     }
-    if (ev.type === 'play' && ev.thulla) {
-      toast(`${playerName(ev.playerId)} played a Thulla!`, 'error');
+    if (ev.type === 'deal') {
+      Soundboard.sfx('deal');
+    }
+    if (ev.type === 'play') {
+      // Own card plays already clicked audibly; others' plays sound on arrival.
+      if (ev.playerId !== view.you.id) Soundboard.sfx('card');
+      if (ev.thulla) toast(`${playerName(ev.playerId)} played a Thulla!`, 'error');
     }
     if (ev.type === 'pickup') {
       const name = playerName(ev.playerId);
       if (ev.reason === 'thulla') {
-        Anim.showThulla(name);
+        Anim.showThulla(name, ev.callout);
         Soundboard.play('vineboom');
+        Soundboard.sfx('shuffle');
       } else {
         toast(`${name} had to pick up ${ev.count} cards`, 'error');
         Soundboard.play('womp');
@@ -808,6 +815,7 @@
     if (ev.type === 'sweep') {
       const seat = document.querySelector(`.seat[data-player-id="${ev.winnerId}"]`);
       if (seat) seat.classList.add('flash-red');
+      Soundboard.sfx('shuffle');
       // Slide the beaten trick into the Saar pile.
       Anim.flyPileAway($('#pile'), $('#saarStack') || $('#saar'), { duration: 600, stagger: 42, scale: 0.5 });
     }

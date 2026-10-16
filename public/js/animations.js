@@ -90,20 +90,14 @@
 
   /* ---------------- Thulla reaction overlay ---------------- */
   let thullaTimer = null;
-  Anim.showThulla = function (who) {
+  // `callout` is chosen by the server so every player sees the same shout.
+  Anim.showThulla = function (who, callout) {
     const overlay = document.getElementById('thullaOverlay');
-    const img = document.getElementById('thullaGif');
+    const textEl = document.getElementById('thullaCallout');
     const whoEl = document.getElementById('thullaWho');
 
-    const gif = Anim.randomGif();
-    if (gif) {
-      img.src = gif.file;
-      img.style.display = '';
-      img.onerror = () => { img.style.display = 'none'; };
-    } else {
-      img.style.display = 'none';
-    }
-    whoEl.textContent = who ? `${who} gets a Thulla!` : 'Thulla!';
+    if (textEl) textEl.textContent = callout || 'THULLA!';
+    if (whoEl) whoEl.textContent = who ? `${who} gets a Thulla!` : 'Thulla!';
 
     overlay.classList.remove('hidden');
     const inner = overlay.querySelector('.thulla-inner');
@@ -112,7 +106,7 @@
     inner.style.animation = '';
 
     clearTimeout(thullaTimer);
-    thullaTimer = setTimeout(() => overlay.classList.add('hidden'), 2400);
+    thullaTimer = setTimeout(() => overlay.classList.add('hidden'), 2600);
   };
 
   /* ---------------- flying card helper ---------------- */

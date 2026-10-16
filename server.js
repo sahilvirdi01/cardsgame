@@ -151,8 +151,23 @@ function broadcastLobby(room) {
   io.to(room.id).emit('lobby', lobbyPayload(room));
 }
 
+/** Random shout shown to EVERYONE when a Thulla is played (picked once, server-side). */
+const THULLA_CALLOUTS = ['CHAKKO THOCHUU', 'OO JANDA EE', 'AA GYA SWAAD'];
+
+/** Pick the callout for a thulla pickup; special one when the Thulla card is the A♣. */
+function thullaCallout(ev) {
+  const plays = (ev && ev.plays) || [];
+  const card = plays.length ? plays[plays.length - 1].card : null;
+  if (card && card.rank === 'A' && card.suit === '♣') return 'AAH CHAKKK CHAMBAA';
+  return THULLA_CALLOUTS[Math.floor(Math.random() * THULLA_CALLOUTS.length)];
+}
+
 function broadcastState(room, events = []) {
   if (!room.game) return;
+  // Attach the Thulla shout once so every player sees the exact same text.
+  for (const ev of events) {
+    if (ev.type === 'pickup' && ev.reason === 'thulla' && !ev.callout) ev.callout = thullaCallout(ev);
+  }
   for (const p of room.players.values()) {
     if (!p.socketId) continue;
     io.to(p.socketId).emit('state', { view: room.game.viewFor(p.id), events });

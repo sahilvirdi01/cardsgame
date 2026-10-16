@@ -4,6 +4,11 @@
  * synthesized cues are kept purely for automatic game events (thulla, pickup,
  * escape, game over) and are not shown on the board.
  *
+ * Game SFX (card, deal, shuffle) can be replaced with your own audio file:
+ * add an entry to manifest.json with "hidden": true (e.g.
+ * { "id": "card", "label": "Card", "file": "/sounds/card.mp3", "hidden": true })
+ * — SB.sfx() will then play that file instead of the synth.
+ *
  * Only ONE sound plays at a time: starting any new sound stops the previous
  * one immediately. */
 (function () {
@@ -12,6 +17,7 @@
     master: null,
     sounds: new Map(),
     files: new Map(),
+    hidden: new Set(),     // file ids that are SFX-only (not shown on the board)
     nodes: new Set(),      // active Web Audio sources (game cues)
     currentAudio: null,    // currently playing <audio>
   };
@@ -86,6 +92,67 @@
     src.stop(t + dur);
   }
 
+  /* ---- independent SFX (card flicks, shuffles) ----
+   * These use their own gain bus and are NOT cut by SB.stop(), so a card
+   * flick or shuffle can layer under the memes instead of silencing them. */
+  let sfxGain = null;
+  function sfxBus() {
+    const ac = ctx();
+    if (!sfxGain) { sfxGain = ac.createGain(); sfxGain.gain.value = 0.9; sfxGain.connect(ac.destination); }
+    return sfxGain;
+  }
+  function sfxNoise(o) {
+    const ac = ctx();
+    const t = ac.currentTime + (o.when || 0);
+    const dur = o.dur || 0.1;
+    const frame = ac.createBuffer(1, Math.max(1, ac.sampleRate * dur), ac.sampleRate);
+    const data = frame.getChannelData(0);
+    for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / data.length);
+    const src = ac.createBufferSource();
+    src.buffer = frame;
+    const filter = ac.createBiquadFilter();
+    filter.type = o.filter || 'highpass';
+    filter.frequency.value = o.freq || 2000;
+    filter.Q.value = o.Q || 1;
+    const g = ac.createGain();
+    g.gain.value = o.gain == null ? 0.3 : o.gain;
+    src.connect(filter).connect(g);
+    g.connect(sfxBus());
+    src.start(t);
+    src.stop(t + dur);
+  }
+
+  const SFX = {
+    // A card landing on the table: a crisp high-pass snap.
+    card: () => {
+      sfxNoise({ freq: 2600, Q: 0.7, dur: 0.08, gain: 0.35 });
+      sfxNoise({ freq: 1100, Q: 1.0, dur: 0.05, gain: 0.16, when: 0.004, filter: 'bandpass' });
+    },
+    // Cards sliding/gathering into the Saar or a deck: a soft multi-swipe.
+    shuffle: () => {
+      for (let i = 0; i < 5; i++) {
+        sfxNoise({ freq: 1500 + i * 350, Q: 0.6, dur: 0.12, gain: 0.16, when: i * 0.045, filter: 'bandpass' });
+      }
+    },
+    // The initial deal: a quick riffle.
+    deal: () => {
+      for (let i = 0; i < 7; i++) {
+        sfxNoise({ freq: 1900 + (i % 3) * 500, Q: 0.6, dur: 0.09, gain: 0.14, when: i * 0.04, filter: 'highpass' });
+      }
+    },
+  };
+  // Plays a game SFX. If a sound file is registered under this id (see
+  // manifest.json with "hidden": true) it plays that file; otherwise it falls
+  // back to the synthesized cue.
+  SB.sfx = function (name) {
+    const file = SB.files.get(name);
+    if (file) {
+      try { const a = new Audio(file); a.volume = 0.9; a.play(); return; } catch (e) { /* fall through */ }
+    }
+    const fn = SFX[name];
+    if (fn) { try { fn(); } catch (e) { /* ignore */ } }
+  };
+
   // ---- synthesized cues for automatic game events (not shown on the board) ----
   const defs = [
     ['vineboom', 'Vine Boom', '💥', () => {
@@ -141,6 +208,7 @@
     (manifest || []).forEach((s) => {
       if (!s || !s.id || !s.file) return;
       SB.files.set(s.id, s.file);
+      if (s.hidden) SB.hidden.add(s.id);
       if (!SB.sounds.has(s.id)) SB.sounds.set(s.id, { id: s.id, label: s.label || s.id, emoji: s.emoji || '🔊', synth: null });
     });
   };
@@ -148,12 +216,12 @@
   SB.renderGrid = function (container, onClick) {
     container.innerHTML = '';
     for (const s of SB.sounds.values()) {
-      if (!SB.files.has(s.id)) continue; // board shows only the custom sound files
+      if (!SB.files.has(s.id) || SB.hidden.has(s.id)) continue; // board shows only visible custom sounds
       const b = document.createElement('button');
       b.className = 'sound-btn';
       b.type = 'button';
       b.dataset.sound = s.id;
-      b.innerHTML = `<span class="em">${s.emoji}</span><span>${s.label}</span>`;
+      b.innerHTML = `<span class="pb" aria-hidden="true">▶</span><span>${s.label}</span>`;
       b.addEventListener('click', () => onClick(s.id));
       container.appendChild(b);
     }

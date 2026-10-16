@@ -387,13 +387,16 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 }
 .sb-head{display:flex;align-items:center;justify-content:space-between;padding:.55rem .8rem;
   background:rgba(245,197,66,.1);font-weight:800;color:var(--gold)}
-.sound-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:.45rem;padding:.7rem;max-height:44vh;overflow:auto}
+.sound-grid{display:flex;flex-direction:column;gap:.45rem;padding:.7rem;max-height:44vh;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin}
 .sound-btn{
   border:1px solid var(--border);background:var(--panel2);color:var(--ink);border-radius:12px;
-  padding:.6rem .4rem;font-size:.78rem;font-weight:600;cursor:pointer;display:flex;flex-direction:column;
-  align-items:center;gap:.2rem;transition:.12s;
+  padding:.6rem .7rem;font-size:.85rem;font-weight:600;cursor:pointer;display:flex;flex-direction:row;
+  align-items:center;gap:.55rem;transition:.12s;
 }
-.sound-btn .em{font-size:1.3rem}
+.sound-btn .pb{
+  display:grid;place-items:center;width:1.7rem;height:1.7rem;border-radius:50%;
+  background:rgba(245,197,66,.15);color:var(--gold);font-size:.85rem;line-height:1;
+}
 .sound-btn:hover{background:rgba(245,197,66,.18);transform:translateY(-2px)}
 .sound-btn:active{transform:translateY(1px) scale(.96)}
 
@@ -420,6 +423,9 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 .thulla-title{font-size:clamp(2.6rem,11vw,6rem);font-weight:800;color:var(--gold);letter-spacing:.05rem;
   text-shadow:0 4px 0 #7a2010,0 0 40px rgba(245,197,66,.8);margin-top:.3rem;animation:pulseTxt .8s infinite}
 .thulla-who{font-size:1.2rem;font-weight:700;color:#fff}
+.thulla-callout{font-family:'Baloo 2',cursive;font-size:clamp(2rem,9vw,4.8rem);font-weight:800;color:var(--gold);
+  letter-spacing:.03rem;line-height:1.05;text-shadow:0 4px 0 #7a2010,0 0 40px rgba(245,197,66,.8);
+  animation:pulseTxt .8s infinite}
 
 .gameover-card{background:var(--panel);border:1px solid var(--border);border-radius:24px;padding:1.6rem 1.8rem;
   text-align:center;box-shadow:var(--shadow);max-width:460px;width:92vw;max-height:88vh;overflow:auto;
