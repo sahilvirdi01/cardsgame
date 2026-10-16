@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# Build output & coverage
+dist/
+build/
+coverage/
+.nyc_output/
+
+# Runtime
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# OS junk
+.DS_Store
+Thumbs.db
+desktop.ini
+*:Zone.Identifier
+
+# Editor / IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~

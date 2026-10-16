@@ -1,0 +1,720 @@
+'use strict';
+(function () {
+  const $ = (s) => document.querySelector(s);
+  const $$ = (s) => [...document.querySelectorAll(s)];
+
+  const socket = io();
+  const APP = {
+    roomId: null,
+    selfId: null,
+    isHost: false,
+    lobby: null,
+    lastView: null,
+    ready: false,
+    sittingOut: false,
+  };
+
+  /* ---------------- utils ---------------- */
+  function toast(message, kind) {
+    const wrap = $('#toasts');
+    const el = document.createElement('div');
+    el.className = 'toast' + (kind ? ' ' + kind : '');
+    el.textContent = message;
+    wrap.appendChild(el);
+    setTimeout(() => {
+      el.style.transition = 'opacity .3s, transform .3s';
+      el.style.opacity = '0';
+      el.style.transform = 'translateY(-10px)';
+      setTimeout(() => el.remove(), 320);
+    }, 2200);
+  }
+
+  function showScreen(id) {
+    $$('.screen').forEach((s) => s.classList.toggle('active', s.id === 'screen-' + id));
+    APP.screen = id;
+    if (id === 'game') renderVideos();
+    if (id === 'lobby') renderVideos();
+  }
+
+  function playerName(id) {
+    const src = (APP.lobby && APP.lobby.players) || (APP.lastView && APP.lastView.players) || [];
+    const p = src.find((x) => x.id === id);
+    return p ? p.nickname : 'Player';
+  }
+
+  function showSound(id) { $('#soundboard').classList.remove('hidden'); }
+
+  /* ---------------- home ---------------- */
+  const saved = localStorage.getItem('bhabhi:nick') || '';
+  if (saved) $('#nicknameInput').value = saved;
+
+  function doJoin(roomId) {
+    const nickname = $('#nicknameInput').value.trim();
+    if (!nickname) { $('#homeError').textContent = 'Please enter a nickname.'; return; }
+    localStorage.setItem('bhabhi:nick', nickname);
+    Soundboard.unlock();
+    socket.emit('join', { nickname, roomId }, (res) => {
+      if (!res || !res.ok) { $('#homeError').textContent = (res && res.error) || 'Could not join.'; return; }
+      APP.roomId = res.roomId;
+      APP.selfId = res.playerId;
+      WebRTC.selfId = res.playerId;
+      $('#homeError').textContent = '';
+      showScreen('lobby');
+      toast('Joined room ' + res.roomId, 'sound');
+    });
+  }
+
+  $('#createBtn').addEventListener('click', () => doJoin(null));
+  $('#joinBtn').addEventListener('click', () => doJoin($('#roomInput').value.toUpperCase().trim()));
+  $('#roomInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#joinBtn').click(); });
+  $('#nicknameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#createBtn').click(); });
+
+  /* ---------------- info overlays ---------------- */
+  const openEl = (el) => el.classList.remove('hidden');
+  const closeEl = (el) => el.classList.add('hidden');
+  $('#howBtn').addEventListener('click', () => openEl($('#howOverlay')));
+  $('#howClose').addEventListener('click', () => closeEl($('#howOverlay')));
+
+  /* ---------------- mobile notice ---------------- */
+  function isMobileDevice() {
+    const ua = navigator.userAgent || '';
+    const uaMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
+    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+    const small = Math.min(window.innerWidth, window.innerHeight) < 820;
+    return uaMobile || (coarse && small);
+  }
+  $('#mobileContinue').addEventListener('click', () => {
+    closeEl($('#mobileOverlay'));
+    try { sessionStorage.setItem('bhabhi:mobile-notice', '1'); } catch (e) {}
+  });
+
+  /* ---------------- room chip ---------------- */
+  function setRoomCode(code) {
+    $('#lobbyRoomCode').textContent = code;
+    $('#gameRoomCode').textContent = code;
+  }
+  function copyRoom() {
+    if (!APP.roomId) return;
+    navigator.clipboard && navigator.clipboard.writeText(APP.roomId);
+    toast('Room code copied: ' + APP.roomId);
+  }
+  $('#lobbyRoomChip').addEventListener('click', copyRoom);
+  $('#gameRoomChip').addEventListener('click', copyRoom);
+
+  /* ---------------- lobby ---------------- */
+  function renderLobby() {
+    const l = APP.lobby;
+    if (!l) return;
+    setRoomCode(l.roomId);
+    $('#lobbyCount').textContent = `${l.players.length}/${l.maxPlayers}`;
+    const ul = $('#lobbyPlayers');
+    ul.innerHTML = '';
+    l.players.forEach((p) => {
+      const li = document.createElement('li');
+      const initial = p.nickname.slice(0, 1).toUpperCase();
+      li.innerHTML =
+        `<span class="avatar">${initial}</span>` +
+        `<span class="nm">${p.nickname}${p.id === APP.selfId ? ' (you)' : ''}</span>` +
+        `<span class="medias">${p.mic ? '🎤' : ''}${p.cam ? '📷' : ''}</span>` +
+        (p.isHost ? '<span class="host-tag">HOST</span>' : '');
+      ul.appendChild(li);
+    });
+
+    APP.isHost = l.hostId === APP.selfId;
+    const canStart = APP.isHost && l.players.length >= 2;
+    $('#startBtn').disabled = !canStart;
+    $('#startBtn').classList.toggle('hidden', !APP.isHost);
+    $('#lobbyHint').textContent = !APP.isHost
+      ? 'Waiting for the host to start…'
+      : (l.players.length < 2 ? 'Waiting for players… (need at least 2)' : 'Ready when you are!');
+
+    $('#rulesBox').classList.toggle('hidden', !APP.isHost);
+    if (l.rules) applyRules(l.rules);
+
+    WebRTC.syncPeers(l.players.map((p) => p.id));
+    renderVideos();
+  }
+
+  const RULE_SELECTORS = { '#ruleDirection': 'direction', '#ruleEscapeTiming': 'escapeTiming', '#ruleEscapeLead': 'escapeLead' };
+  function currentRules() {
+    const rules = {};
+    for (const [sel, key] of Object.entries(RULE_SELECTORS)) rules[key] = $(sel).value;
+    return rules;
+  }
+  function applyRules(rules) {
+    for (const [sel, key] of Object.entries(RULE_SELECTORS)) {
+      const el = $(sel);
+      // Don't fight the host while they're mid-selection.
+      if (el && rules[key] && document.activeElement !== el) el.value = rules[key];
+    }
+  }
+  Object.keys(RULE_SELECTORS).forEach((sel) => {
+    $(sel).addEventListener('change', () => { if (APP.isHost) socket.emit('setRules', currentRules()); });
+  });
+
+  $('#startBtn').addEventListener('click', () => { Soundboard.unlock(); socket.emit('startGame', { rules: currentRules() }); });
+
+  /* ---------------- media controls ---------------- */
+  async function toggleMic() {
+    Soundboard.unlock();
+    const on = !WebRTC.media.mic;
+    try { await WebRTC.setMic(on); }
+    catch (e) { toast('Microphone permission denied', 'error'); return; }
+    updateMediaButtons();
+    socket.emit('mediaState', { mic: WebRTC.media.mic, cam: WebRTC.media.cam });
+    renderVideos();
+  }
+  async function toggleCam() {
+    Soundboard.unlock();
+    const on = !WebRTC.media.cam;
+    try { await WebRTC.setCam(on); }
+    catch (e) { toast('Camera permission denied', 'error'); return; }
+    updateMediaButtons();
+    socket.emit('mediaState', { mic: WebRTC.media.mic, cam: WebRTC.media.cam });
+    renderVideos();
+  }
+  function updateMediaButtons() {
+    ['#micBtn', '#lobbyMicBtn'].forEach((s) => $(s) && $(s).classList.toggle('on', WebRTC.media.mic));
+    ['#camBtn', '#lobbyCamBtn'].forEach((s) => $(s) && $(s).classList.toggle('on', WebRTC.media.cam));
+  }
+  $('#micBtn').addEventListener('click', toggleMic);
+  $('#lobbyMicBtn').addEventListener('click', toggleMic);
+  $('#camBtn').addEventListener('click', toggleCam);
+  $('#lobbyCamBtn').addEventListener('click', toggleCam);
+
+  /* ---------------- video tiles ---------------- */
+  const tiles = new Map(); // key -> {video, off, name, icons, tile}
+
+  function renderVideos() {
+    const list = (APP.lobby && APP.lobby.players) || [];
+    const views = list.map((p) => ({ id: p.id, nickname: p.nickname, mic: p.mic, cam: p.cam, isYou: p.id === APP.selfId }));
+    if (!views.find((v) => v.isYou) && APP.selfId) {
+      views.unshift({ id: 'self', nickname: 'You', mic: WebRTC.media.mic, cam: WebRTC.media.cam, isYou: true });
+    }
+    renderGrid($('#lobbyVideoGrid'), 'lobby', views);
+    renderGrid($('#sideVideoGrid'), 'side', views);
+  }
+
+  function renderGrid(container, prefix, views) {
+    if (!container) return;
+    const seen = new Set();
+    for (const v of views) {
+      const key = prefix + ':' + v.id;
+      seen.add(key);
+      let t = tiles.get(key);
+      if (!t || !container.contains(t.tile)) {
+        const tile = document.createElement('div');
+        tile.className = 'video-tile' + (v.isYou ? ' self' : '');
+        tile.innerHTML =
+          '<video autoplay playsinline muted></video>' +
+          '<div class="vt-off">🎥</div>' +
+          '<div class="vt-name"><span class="nm"></span><span class="vt-icons"></span></div>';
+        container.appendChild(tile);
+        t = {
+          tile,
+          video: tile.querySelector('video'),
+          off: tile.querySelector('.vt-off'),
+          name: tile.querySelector('.nm'),
+          icons: tile.querySelector('.vt-icons'),
+        };
+        tiles.set(key, t);
+      }
+      const peerId = v.isYou ? 'self' : v.id;
+      t.video.muted = true; // remote audio plays through the dedicated audio sink
+      const stream = peerId === 'self' ? WebRTC.localStream : (WebRTC.peers.get(peerId) || {}).stream;
+      if (stream && t.video.srcObject !== stream) t.video.srcObject = stream;
+      const hasVideo = stream && stream.getVideoTracks().some((tr) => tr.enabled && tr.readyState === 'live');
+      t.off.style.display = hasVideo ? 'none' : 'grid';
+      t.name.textContent = v.nickname;
+      t.icons.textContent = (v.mic ? '🎤' : '🔇') + (v.cam ? '📷' : '');
+      t.tile.style.order = '';
+    }
+    // remove stale tiles
+    for (const [key, t] of tiles) {
+      if (key.startsWith(prefix + ':') && !seen.has(key)) {
+        t.tile.remove();
+        tiles.delete(key);
+      }
+    }
+  }
+
+  WebRTC.onUpdate = () => { if (APP.screen === 'game' || APP.screen === 'lobby') renderVideos(); };
+  WebRTC.onLocalChange = () => { updateMediaButtons(); renderVideos(); };
+
+  /* ---------------- soundboard ---------------- */
+  function playSound(id) {
+    Soundboard.play(id);
+    socket.emit('sound', { sound: id });
+  }
+  Soundboard.renderGrid($('#soundGrid'), playSound);
+
+  $('#soundsBtn').addEventListener('click', () => {
+    Soundboard.unlock();
+    $('#soundboard').classList.toggle('hidden');
+  });
+  $('#sbClose').addEventListener('click', () => $('#soundboard').classList.add('hidden'));
+
+  socket.on('sound', ({ sound, nickname }) => {
+    Soundboard.play(sound);
+    const meta = Soundboard.sounds.get(sound);
+    toast(`${nickname} played ${meta ? meta.emoji + ' ' + meta.label : sound}`, 'sound');
+  });
+
+  /* ---------------- chat ---------------- */
+  function addChat(line, cls) {
+    const log = $('#chatLog');
+    const div = document.createElement('div');
+    div.className = 'chat-line' + (cls ? ' ' + cls : '');
+    div.innerHTML = line;
+    log.appendChild(div);
+    log.scrollTop = log.scrollHeight;
+  }
+  $('#chatForm').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const text = $('#chatInput').value.trim();
+    if (!text) return;
+    socket.emit('chat', { text });
+    $('#chatInput').value = '';
+  });
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  socket.on('chat', ({ nickname, text }) => {
+    addChat(`<b>${esc(nickname)}:</b> ${esc(text)}`);
+  });
+  $('#chatBtn').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+  $('#chatFootBtn').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+  $('#chatClose').addEventListener('click', () => $('#sidebar').classList.remove('open'));
+  $('#howGameBtn').addEventListener('click', () => openEl($('#howOverlay')));
+  $('#copyInviteBtn').addEventListener('click', copyRoom);
+  $('#soundsFootBtn').addEventListener('click', () => {
+    Soundboard.unlock();
+    $('#soundboard').classList.toggle('hidden');
+  });
+  $('#suggestBtn').addEventListener('click', () => {
+    const v = APP.lastView;
+    if (!v || v.over) return;
+    if (v.turnId !== APP.selfId) { toast('Wait for your turn'); return; }
+    const moves = v.you.legalMoves || [];
+    if (!moves.length) return;
+    const pick = moves[Math.floor(Math.random() * moves.length)];
+    const card = document.querySelector(`.hand .card[data-card-id="${pick}"]`);
+    const slot = card && card.closest('.slot');
+    if (slot) {
+      slot.classList.add('suggested');
+      setTimeout(() => slot.classList.remove('suggested'), 1800);
+    }
+  });
+
+  /* ---------------- leaving ---------------- */
+  function leave() {
+    if (!confirm('Leave the room?')) return;
+    WebRTC.cleanup();
+    try { socket.disconnect(); } catch (e) {}
+    location.href = '/';
+  }
+  ['#leaveBtn', '#lobbyLeaveBtn', '#leave2Btn'].forEach((s) => $(s) && $(s).addEventListener('click', leave));
+  $('#playAgainBtn').addEventListener('click', () => socket.emit('restart'));
+
+  /* ---------------- socket events ---------------- */
+  socket.on('connect', () => { WebRTC.selfId = socket.id; });
+  socket.on('lobby', (l) => { APP.lobby = l; APP.selfId = socket.id; renderLobby(); });
+  socket.on('notice', (n) => toast(n.message, n.type === 'error' ? 'error' : ''));
+
+  socket.on('peerMedia', ({ id, mic, cam }) => {
+    WebRTC.setRemoteMedia(id, mic, cam);
+    if (APP.lobby) {
+      const p = APP.lobby.players.find((x) => x.id === id);
+      if (p) { p.mic = mic; p.cam = cam; }
+      renderVideos();
+    }
+  });
+  socket.on('peerLeft', ({ id }) => {
+    WebRTC.removePeer(id);
+    if (APP.lobby) APP.lobby.players = APP.lobby.players.filter((p) => p.id !== id);
+    renderVideos();
+    addChat(`${playerName(id)} left the room.`, 'sys');
+  });
+
+  socket.on('gameStart', async () => {
+    closeEl($('#gameOverOverlay'));
+    APP.ready = false;
+    APP.prevHandIds = null;
+    showScreen('game');
+    addChat('Game started!', 'sys');
+    await Anim.playStartAnimation();
+    APP.ready = true;
+    if (APP.pending) { renderGame(APP.pending.view, APP.pending.events); APP.pending = null; }
+  });
+
+  socket.on('state', ({ view, events }) => {
+    APP.lastView = view;
+    APP.lobby = APP.lobby || {};
+    APP.lobby.players = view.players.map((p) => ({
+      id: p.id, nickname: p.nickname, mic: (APP.lobby.players || []).find((x) => x.id === p.id)?.mic,
+      cam: (APP.lobby.players || []).find((x) => x.id === p.id)?.cam,
+    }));
+    WebRTC.syncPeers(view.players.map((p) => p.id));
+    if (!APP.ready) { APP.pending = { view, events }; return; }
+    renderGame(view, events);
+  });
+
+  socket.on('backToLobby', () => {
+    closeEl($('#gameOverOverlay'));
+    showScreen('lobby');
+    toast('Back to the lobby');
+  });
+  socket.on('gameAborted', ({ reason }) => {
+    closeEl($('#gameOverOverlay'));
+    showScreen('lobby');
+    toast(reason || 'Game aborted', 'error');
+  });
+
+  /* ---------------- game rendering ---------------- */
+  function seatPositions(players, selfId) {
+    const mine = players.findIndex((p) => p.id === selfId);
+    const n = players.length;
+    const map = {};
+    players.forEach((p, i) => {
+      const offset = (i - (mine < 0 ? 0 : mine) + n) % n;
+      const angle = Math.PI / 2 + (offset * 2 * Math.PI) / n;
+      map[p.id] = {
+        left: 50 + 43 * Math.cos(angle),
+        top: 50 + 38 * Math.sin(angle),
+      };
+    });
+    return map;
+  }
+
+  function dirFor(selfId, playerId, players) {
+    if (playerId === selfId) return 'bottom';
+    const pos = seatPositions(players, selfId);
+    const p = pos[playerId];
+    if (!p) return 'top';
+    const dx = p.left - 50, dy = p.top - 50;
+    if (Math.abs(dx) > Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+    return dy < 0 ? 'top' : 'bottom';
+  }
+
+  function renderGame(view, events) {
+    events = events || [];
+    const players = [...view.players].sort((a, b) => a.seat - b.seat);
+    renderSeats(view, players);
+    renderCenter(view, events, players);
+    renderHand(view);
+    renderStats(view, players);
+    renderTurnBanner(view, players);
+    updateMediaButtons();
+    renderVideos();
+
+    for (const ev of events) handleEvent(ev, view, players);
+  }
+
+  function renderSeats(view, players) {
+    const seatsEl = $('#seats');
+    const pos = seatPositions(players, view.you.id);
+    seatsEl.innerHTML = '';
+    seatsEl.classList.toggle('many', players.length > 4);
+    players.forEach((p) => {
+      const isYou = p.id === view.you.id;
+      const el = document.createElement('div');
+      el.className = 'seat' + (p.id === view.turnId ? ' turn' : '') +
+        (p.out ? ' out' : '') + (isYou ? ' you' : '');
+      el.dataset.playerId = p.id;
+      el.style.left = pos[p.id].left + '%';
+      el.style.top = pos[p.id].top + '%';
+      const initial = (p.nickname || '?').slice(0, 1).toUpperCase();
+      let segs = '';
+      for (let i = 0; i < Math.min(p.handCount, 20); i++) segs += '<i></i>';
+      const role = p.out ? 'Out' : (p.id === view.turnId ? (isYou ? 'Your turn' : 'Playing') : '');
+      el.innerHTML =
+        `<div class="seat-avatar">${initial}</div>` +
+        `<div class="seat-name">${isYou ? 'You' : p.nickname}</div>` +
+        `<div class="seat-role">${role}</div>` +
+        `<div class="seat-count">${p.handCount} card${p.handCount === 1 ? '' : 's'}</div>` +
+        `<div class="seat-bar">${segs}</div>`;
+      seatsEl.appendChild(el);
+    });
+  }
+
+  function renderStats(view, players) {
+    const you = view.you.id;
+    const count = players.length;
+    $('#statsCount').textContent = count;
+    $('#statsCode').textContent = APP.roomId || '----';
+
+    const ul = $('#statPlayers');
+    ul.innerHTML = '';
+    players.forEach((p) => {
+      const li = document.createElement('li');
+      li.className = 'stat-player' + (p.id === view.turnId ? ' turn' : '') +
+        (p.out ? ' out' : '') + (p.id === you ? ' you' : '');
+      const initial = (p.nickname || '?').slice(0, 1).toUpperCase();
+      const pct = Math.min(100, Math.round((p.handCount / 26) * 100));
+      const lp = (APP.lobby && APP.lobby.players || []).find((x) => x.id === p.id) || {};
+      const tags = [p.id === view.turnId ? 'turn' : '', p.out ? 'safe ✓' : '',
+        p.id === you ? 'you' : '', lp.mic ? '🎤' : '', lp.cam ? '📷' : ''].filter(Boolean).join(' · ');
+      li.innerHTML =
+        `<div class="sp-avatar">${initial}</div>` +
+        `<div class="sp-info"><div class="sp-name">${p.nickname}${p.id === you ? ' (you)' : ''}</div>` +
+        `<div class="sp-bar"><i style="width:${pct}%"></i></div>` +
+        `<div class="sp-tags">${tags}</div></div>` +
+        `<div class="sp-cards">${p.handCount}</div>`;
+      ul.appendChild(li);
+    });
+
+    const activeCount = players.filter((p) => !p.out).length;
+    const RULE_LABEL = {
+      direction: { clockwise: 'Clockwise ↻', anticlockwise: 'Counter-clockwise ↺' },
+      escapeTiming: { trickEnd: 'When empty (after trick)', immediate: 'Immediate', lastCardHighest: 'Last card highest' },
+      escapeLead: { nextActive: 'Next player leads', drawFromSaar: 'Draw from Saar' },
+    };
+    const ruleRow = (key) => {
+      const label = RULE_LABEL[key] && RULE_LABEL[key][view[key]];
+      return label ? label : '—';
+    };
+    const rows = [
+      ['Players', `${count} / 10`],
+      ['Decks in play', view.numDecks],
+      ['Trick', view.tricks + 1],
+      ['Still playing', activeCount],
+      ['Direction', ruleRow('direction')],
+      ['Escape', ruleRow('escapeTiming')],
+      ['On escape', ruleRow('escapeLead')],
+      ['Saar (used cards)', view.discardCount],
+      ['Your cards', view.you.hand.length],
+    ];
+    const st = $('#statTable');
+    st.innerHTML = '';
+    rows.forEach(([k, v]) => {
+      const li = document.createElement('li');
+      li.innerHTML = `<span>${k}</span><b>${v}</b>`;
+      st.appendChild(li);
+    });
+
+    $('#tableMeta').textContent =
+      `Trick ${view.tricks + 1} · ${activeCount} playing · Saar ${view.discardCount}`;
+  }
+
+  // Collapsed / expanded fan geometry (px) for the trick pile.
+  const PILE = { gap: 26, tilt: 2.6, gapHover: 46, tiltHover: 0 };
+  function pileTransform(k, gap, tilt) {
+    const x = (k * gap).toFixed(1);
+    return `translateX(calc(-50% + ${x}px)) rotate(${(k * tilt).toFixed(2)}deg)`;
+  }
+
+  function renderCenter(view, events, players) {
+    const pile = $('#pile');
+    // Clear the animated state from the previous render *before* rebuilding, so
+    // a finished sweep/pickup (which ends at opacity:0) can never leave the
+    // pile permanently invisible — the original "cards disappear" bug.
+    pile.classList.remove('anim-sweep', 'anim-pickup', 'flash-red');
+    pile.innerHTML = '';
+    const resolveEv = events.find((e) => (e.type === 'pickup' || e.type === 'sweep') && e.plays);
+    const plays = view.trick ? view.trick.plays : (resolveEv ? resolveEv.plays : []);
+    const n = plays.length;
+    const mid = (n - 1) / 2;
+    const recent = events.find((e) => e.type === 'play') ||
+      (resolveEv ? { playerId: resolveEv.plays[resolveEv.plays.length - 1].playerId } : null);
+    plays.forEach((pl, i) => {
+      const el = Anim.cardEl(pl.card, { small: true });
+      const k = i - mid;
+      // Custom properties are read by .pile .card and the fly-in keyframes.
+      el.style.setProperty('--base', pileTransform(k, PILE.gap, PILE.tilt));
+      el.style.setProperty('--hover', pileTransform(k, PILE.gapHover, PILE.tiltHover));
+      el.style.zIndex = i + 1;
+      el.title = `${playerName(pl.playerId)} played ${pl.card.rank}${pl.card.suit}`;
+      if (recent && i === n - 1) {
+        const dir = dirFor(view.you.id, recent.playerId, players);
+        el.classList.add('anim-in-' + dir);
+      }
+      pile.appendChild(el);
+    });
+
+    const sweep = events.find((e) => e.type === 'sweep');
+    const pickup = events.find((e) => e.type === 'pickup');
+    if (sweep) pile.classList.add('anim-sweep');
+    if (pickup) {
+      pile.classList.add('anim-pickup', 'flash-red');
+    }
+
+    // Saar — the stack of used/discarded cards (bottom-right of the felt)
+    const saarCount = view.discardCount;
+    $('#saarCount').textContent = saarCount;
+    const stack = $('#saarStack');
+    stack.innerHTML = '';
+    const caps = Math.min(saarCount, 6);
+    for (let i = 0; i < caps; i++) {
+      const sc = document.createElement('div');
+      sc.className = 'saar-card';
+      sc.style.transform = `translate(${i * 2}px, ${-i * 2}px) rotate(${(i - 2) * 3}deg)`;
+      stack.appendChild(sc);
+    }
+    $('#saar').style.visibility = saarCount ? 'visible' : 'hidden';
+
+    // Led-suit badge (bottom-left of the felt)
+    const badge = $('#ledSuitBadge');
+    if (view.trick && view.trick.ledSuit) {
+      const red = view.trick.ledSuit === '♥' || view.trick.ledSuit === '♦';
+      badge.innerHTML = `<div class="fs-label">Led suit</div><div class="fs-suit ${red ? 'red' : 'black'}">${view.trick.ledSuit}</div>`;
+    } else {
+      badge.innerHTML = '<div class="fs-label">New trick</div><div class="fs-suit black">—</div>';
+    }
+  }
+
+  function renderHand(view) {
+    const handEl = $('#hand');
+    handEl.innerHTML = '';
+    const hand = view.you.hand;
+    const legal = new Set(view.you.legalMoves || []);
+    const n = hand.length;
+    const maxWidth = Math.min(handEl.clientWidth || 700, 720);
+    const cardW = 74;
+    const spacing = n > 1 ? Math.min(cardW * 0.72, (maxWidth - 90) / (n - 1)) : 0;
+    const mid = (n - 1) / 2;
+    const stepRot = n > 1 ? Math.min(4, 50 / n) : 0;
+
+    const prev = APP.prevHandIds;
+    const freshIds = new Set();
+    hand.forEach((c) => { if (!prev || !prev.has(c.id)) freshIds.add(c.id); });
+    APP.prevHandIds = new Set(hand.map((c) => c.id));
+
+    hand.forEach((c, i) => {
+      const slot = document.createElement('div');
+      const isNew = freshIds.has(c.id);
+      slot.className = 'slot' + (legal.has(c.id) ? ' legal' : ' illegal') + (isNew ? ' dealt' : '');
+      slot.style.setProperty('--x', ((i - mid) * spacing) + 'px');
+      slot.style.setProperty('--rot', ((i - mid) * stepRot) + 'deg');
+      slot.style.zIndex = i;
+      const card = Anim.cardEl(c);
+      if (!legal.has(c.id)) card.classList.add('illegal');
+      card.addEventListener('click', () => onCardClick(view, c, legal));
+      slot.appendChild(card);
+      handEl.appendChild(slot);
+    });
+
+    let d = 0;
+    handEl.querySelectorAll('.slot.dealt').forEach((s) => {
+      s.style.animationDelay = Math.min(d++ * 35, 550) + 'ms';
+    });
+  }
+
+  function onCardClick(view, card, legal) {
+    if (!legal.has(card.id)) {
+      const t = view.trick;
+      if (view.turnId !== view.you.id) {
+        toast('Not your turn');
+      } else if (view.phase === 'opening') {
+        toast('You must open with the Ace of Spades ♠');
+      } else if (t) {
+        toast(`You must follow ${t.ledSuit} if you have it`);
+      }
+      return;
+    }
+    Soundboard.unlock();
+    socket.emit('playCard', { cardId: card.id });
+  }
+
+  function renderTurnBanner(view, players) {
+    const b = $('#turnBanner');
+    if (view.over) {
+      b.textContent = '';
+      b.className = 'turn-banner';
+      return;
+    }
+    const opening = view.phase === 'opening';
+    if (view.turnId === view.you.id) {
+      b.textContent = opening
+        ? 'Your turn — open with the Ace of Spades ♠'
+        : (view.trick ? `Your turn — follow ${view.trick.ledSuit} or play a Thulla!` : 'Your turn — lead any card!');
+      b.className = 'turn-banner mine';
+    } else if (opening) {
+      b.textContent = `${playerName(view.turnId)} opens with the Ace of Spades…`;
+      b.className = 'turn-banner wait';
+    } else {
+      b.textContent = `Waiting for ${playerName(view.turnId)}…`;
+      b.className = 'turn-banner wait';
+    }
+  }
+
+  function handleEvent(ev, view, players) {
+    if (ev.type === 'play' && ev.thulla) {
+      toast(`${playerName(ev.playerId)} played a Thulla!`, 'error');
+    }
+    if (ev.type === 'pickup') {
+      const name = playerName(ev.playerId);
+      if (ev.reason === 'thulla') {
+        Anim.showThulla(name);
+        Soundboard.play('vineboom');
+      } else {
+        toast(`${name} had to pick up ${ev.count} cards`, 'error');
+        Soundboard.play('womp');
+      }
+      const seat = document.querySelector(`.seat[data-player-id="${ev.playerId}"]`);
+      if (seat) {
+        seat.classList.add('hit');
+        setTimeout(() => seat.classList.remove('hit'), 800);
+      }
+    }
+    if (ev.type === 'sweep') {
+      const seat = document.querySelector(`.seat[data-player-id="${ev.winnerId}"]`);
+      if (seat) seat.classList.add('flash-red');
+    }
+    if (ev.type === 'out') {
+      ev.playerIds.forEach((id) => {
+        const name = playerName(id);
+        if (id === view.you.id) toast('You got away! 🎉');
+        else toast(`${name} got away!`);
+      });
+      Soundboard.play('ding');
+    }
+    if (ev.type === 'reenter') {
+      const name = playerName(ev.playerId);
+      toast(idIsYou(ev.playerId, view) ? 'You drew a card from the Saar and are back in!' : `${name} is back in from the Saar!`, 'sound');
+    }
+    if (ev.type === 'gameover') {
+      showGameOver(ev, view, players);
+    }
+  }
+
+  function idIsYou(id, view) {
+    return !!(view && view.you && id === view.you.id);
+  }
+
+  function showGameOver(ev, view, players) {
+    closeEl($('#thullaOverlay'));
+    const loser = ev.loserId === view.you.id ? 'YOU' : playerName(ev.loserId);
+    $('#goLoser').textContent = loser === 'YOU' ? 'You are the Bhabhi!' : loser;
+    const gif = Anim.randomGif();
+    const img = $('#goGif');
+    if (gif) { img.src = gif.file; img.style.display = ''; img.onerror = () => img.style.display = 'none'; }
+    else img.style.display = 'none';
+
+    const ol = $('#goWinners');
+    ol.innerHTML = '';
+    ev.winners.forEach((id, i) => {
+      const li = document.createElement('li');
+      li.textContent = `#${i + 1} ${playerName(id)}${id === view.you.id ? ' (you)' : ''}`;
+      ol.appendChild(li);
+    });
+    $('#playAgainBtn').classList.toggle('hidden', !APP.isHost);
+    openEl($('#gameOverOverlay'));
+    Soundboard.play('sadtrombone');
+  }
+
+  /* ---------------- boot ---------------- */
+  (async function boot() {
+    if (isMobileDevice()) {
+      let seen = false;
+      try { seen = sessionStorage.getItem('bhabhi:mobile-notice') === '1'; } catch (e) {}
+      if (!seen) openEl($('#mobileOverlay'));
+    }
+    Anim.loadGifs();
+    try {
+      const r = await fetch('/sounds/manifest.json', { cache: 'no-cache' });
+      Soundboard.registerFileSounds(await r.json());
+      Soundboard.renderGrid($('#soundGrid'), playSound);
+    } catch (e) { /* optional */ }
+    window.addEventListener('resize', () => { if (APP.lastView && APP.ready) renderHand(APP.lastView); });
+  })();
+
+  document.addEventListener('click', () => Soundboard.unlock(), { once: true });
+})();

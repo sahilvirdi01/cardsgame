@@ -1,0 +1,16 @@
+[
+  { "file": "/gifs/thulla.gif",   "label": "Classic Thulla" },
+  { "file": "/gifs/thulla-2.gif", "label": "Thulla 2" },
+  { "file": "/gifs/bruh.gif",     "label": "Bruh" },
+  { "file": "/gifs/lol.gif",      "label": "LOL" },
+  { "file": "/gifs/oof.gif",      "label": "Oof" },
+  { "file": "/gifs/gg.gif",       "label": "GG" },
+  { "file": "/gifs/rip.gif",      "label": "RIP" },
+  { "file": "/gifs/noob.gif",     "label": "Noob" },
+  { "file": "/gifs/whoa.gif",     "label": "Whoa" },
+  { "file": "/gifs/ohno.gif",     "label": "Oh no" },
+  { "file": "/gifs/bonk.gif",     "label": "Bonk" },
+  { "file": "/gifs/ez.gif",       "label": "EZ" },
+  { "file": "/gifs/sad.gif",      "label": "Sad" },
+  { "file": "/gifs/gigachad.gif", "label": "Chad" }
+]

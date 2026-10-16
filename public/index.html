@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Bhabhi Thulla — Online Card Game</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ===================== HOME ===================== -->
+  <section id="screen-home" class="screen active">
+    <div class="home-wrap">
+      <div class="logo">
+        <div class="logo-cards">
+          <div class="lc lc1">A<i>♠</i></div>
+          <div class="lc lc2">K<i>♥</i></div>
+          <div class="lc lc3">Q<i>♦</i></div>
+        </div>
+        <h1>BHABHI <span>THULLA</span></h1>
+        <p class="tagline">Play the classic shedding card game with friends. 2–10 players. Don't be the last one holding cards!</p>
+      </div>
+
+      <div class="home-card">
+        <label class="field">
+          <span>Your nickname</span>
+          <input id="nicknameInput" maxlength="16" placeholder="e.g. AceOfSpades" autocomplete="off">
+        </label>
+
+        <button id="createBtn" class="btn btn-primary btn-lg">Create Room</button>
+
+        <div class="divider"><span>or join with a code</span></div>
+
+        <div class="join-row">
+          <input id="roomInput" maxlength="4" placeholder="CODE" autocomplete="off" class="code-input">
+          <button id="joinBtn" class="btn">Join</button>
+        </div>
+        <div id="homeError" class="error-text"></div>
+      </div>
+
+      <button id="howBtn" class="btn btn-ghost">How to play</button>
+    </div>
+  </section>
+
+  <!-- ===================== LOBBY ===================== -->
+  <section id="screen-lobby" class="screen">
+    <header class="topbar">
+      <div class="brand"><span class="dot"></span> Bhabhi Thulla</div>
+      <div class="room-chip" id="lobbyRoomChip" title="Click to copy">CODE: <b id="lobbyRoomCode">----</b></div>
+      <div class="top-actions">
+        <button id="lobbyMicBtn" class="icon-btn" title="Toggle microphone">🎤</button>
+        <button id="lobbyCamBtn" class="icon-btn" title="Toggle camera">📷</button>
+        <button id="lobbyLeaveBtn" class="icon-btn danger" title="Leave room">✖</button>
+      </div>
+    </header>
+
+    <div class="lobby-grid">
+      <div class="panel">
+        <div class="panel-head">
+          <h2>Players <span id="lobbyCount" class="pill">0/10</span></h2>
+        </div>
+        <ul id="lobbyPlayers" class="player-list"></ul>
+        <div class="lobby-actions">
+          <button id="startBtn" class="btn btn-primary btn-lg" disabled>Start Game</button>
+          <p id="lobbyHint" class="muted">Waiting for players…</p>
+        </div>
+
+        <div id="rulesBox" class="rules-box hidden">
+          <div class="panel-head"><h2>House rules</h2><span class="pill">Host only</span></div>
+          <label class="field"><span>Turn direction</span>
+            <select id="ruleDirection">
+              <option value="clockwise">Clockwise ↻</option>
+              <option value="anticlockwise">Counter-clockwise ↺</option>
+            </select>
+          </label>
+          <label class="field"><span>Escape timing</span>
+            <select id="ruleEscapeTiming">
+              <option value="trickEnd">When hand is empty (after the trick)</option>
+              <option value="immediate">Immediately</option>
+              <option value="lastCardHighest">Only the last card counts</option>
+            </select>
+          </label>
+          <label class="field"><span>When a player escapes, next lead…</span>
+            <select id="ruleEscapeLead">
+              <option value="nextActive">Goes to the next player</option>
+              <option value="drawFromSaar">Draws a card from the Saar</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div class="panel">
+        <div class="panel-head"><h2>Your Camera &amp; Mic</h2></div>
+        <div id="lobbyVideoGrid" class="video-grid"></div>
+        <p class="muted small">Optional — turn on your mic or camera so friends can hear/see you. Everything stays peer‑to‑peer.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ===================== GAME ===================== -->
+  <section id="screen-game" class="screen">
+    <header class="topbar">
+      <div class="brand"><span class="dot"></span> Bhabhi Thulla</div>
+      <div class="room-chip" id="gameRoomChip" title="Click to copy">ROOM • <b id="gameRoomCode">----</b></div>
+      <div class="top-actions">
+        <button id="howGameBtn" class="link-btn">How to play</button>
+        <button id="soundsBtn" class="icon-btn" title="Soundboard">🔊</button>
+        <button id="chatBtn" class="icon-btn" title="Chat">💬</button>
+        <button id="micBtn" class="icon-btn" title="Toggle microphone">🎤</button>
+        <button id="camBtn" class="icon-btn" title="Toggle camera">📷</button>
+        <button id="leaveBtn" class="icon-btn danger" title="Leave">✖</button>
+      </div>
+    </header>
+
+    <div class="game-layout">
+      <aside class="stats-panel">
+        <div class="stats-head">
+          <div class="stats-kicker">YOUR TABLE</div>
+          <h2>Own the table.<br>Play your hand.</h2>
+          <div class="stats-room">
+            <code id="statsCode">----</code>
+            <button id="copyInviteBtn" class="btn btn-sm">Copy invite</button>
+          </div>
+        </div>
+
+        <div class="stats-body">
+          <section class="stat-block">
+            <div class="stat-block-head"><span>Players</span><span class="pill" id="statsCount">0</span></div>
+            <ul id="statPlayers" class="stat-players"></ul>
+          </section>
+          <section class="stat-block">
+            <div class="stat-block-head"><span>Table stats</span></div>
+            <ul id="statTable" class="stat-table"></ul>
+          </section>
+          <section class="stat-block">
+            <div class="stat-block-head"><span>Cameras &amp; mic</span></div>
+            <div id="sideVideoGrid" class="video-grid small-grid"></div>
+          </section>
+        </div>
+
+        <div class="stats-foot" id="statsFoot">
+          <button id="soundsFootBtn" class="btn btn-sm">🔊 Soundboard</button>
+          <button id="chatFootBtn" class="btn btn-sm">💬 Chat</button>
+        </div>
+      </aside>
+
+      <div class="table-wrap">
+        <div class="table-head">
+          <span class="th-label"><i class="dot"></i> The Classic Table</span>
+          <span class="th-meta" id="tableMeta"></span>
+        </div>
+
+        <div class="table">
+          <div class="table-felt">
+            <div class="felt-center">
+              <div class="pile" id="pile"></div>
+            </div>
+
+            <div id="seats" class="seats"></div>
+          </div>
+
+          <div class="felt-suit" id="ledSuitBadge"></div>
+
+          <div class="saar" id="saar">
+            <div class="saar-label">Saar</div>
+            <div class="saar-stack" id="saarStack"></div>
+            <div class="saar-count"><span id="saarCount">0</span> cards</div>
+          </div>
+        </div>
+
+        <div class="your-area">
+          <div class="your-line">
+            <span id="turnBanner" class="turn-banner">Waiting…</span>
+            <button id="suggestBtn" class="suggest-btn" title="Highlight a playable card">Suggest a card ⇄</button>
+          </div>
+          <div id="hand" class="hand"></div>
+        </div>
+      </div>
+    </div>
+
+    <aside id="sidebar" class="sidebar">
+      <div class="side-section grow">
+        <div class="side-head">Chat<span id="chatClose" class="chat-close">✖</span></div>
+        <div id="chatLog" class="chat-log"></div>
+        <form id="chatForm" class="chat-form">
+          <input id="chatInput" maxlength="200" placeholder="Say something…" autocomplete="off">
+          <button class="btn btn-sm" type="submit">Send</button>
+        </form>
+      </div>
+    </aside>
+  </section>
+</div>
+
+<!-- ===================== SOUNDBOARD ===================== -->
+<div id="soundboard" class="soundboard hidden">
+  <div class="sb-head">
+    <span>Soundboard</span>
+    <button id="sbClose" class="icon-btn tiny">✖</button>
+  </div>
+  <div id="soundGrid" class="sound-grid"></div>
+</div>
+
+<!-- ===================== OVERLAYS ===================== -->
+<div id="startOverlay" class="overlay hidden">
+  <div class="start-anim">
+    <div class="deal-deck" id="dealDeck"></div>
+    <h2 id="startTitle">Shuffling…</h2>
+    <div id="startCount" class="start-count"></div>
+  </div>
+</div>
+
+<div id="thullaOverlay" class="overlay thulla-overlay hidden">
+  <div class="thulla-inner">
+    <img id="thullaGif" alt="thulla" />
+    <div class="thulla-text">
+      <div class="thulla-title">THULLA!</div>
+      <div id="thullaWho" class="thulla-who"></div>
+    </div>
+  </div>
+</div>
+
+<div id="gameOverOverlay" class="overlay hidden">
+  <div class="gameover-card">
+    <div class="go-badge">BHABHI</div>
+    <img id="goGif" alt="" class="go-gif">
+    <h2 id="goLoser">—</h2>
+    <p class="muted">is the last one holding cards 😂</p>
+    <ol id="goWinners" class="go-winners"></ol>
+    <div class="go-actions">
+      <button id="playAgainBtn" class="btn btn-primary hidden">Play Again</button>
+      <button id="leave2Btn" class="btn">Leave</button>
+    </div>
+  </div>
+</div>
+
+<div id="howOverlay" class="overlay hidden">
+  <div class="how-card">
+    <h2>How to play Bhabhi Thulla</h2>
+    <ul>
+      <li><b>Goal:</b> empty your hand. The last player still holding cards is the <b>Bhabhi / Thulla</b> (loser).</li>
+      <li>The holder of the <b>Ace of Spades</b> starts by playing it.</li>
+      <li>The leader plays any card — its <b>suit</b> is what everyone must follow.</li>
+      <li>If you have the led suit, you <b>must</b> play it.</li>
+      <li>If you don't, play any card — that's a <b>Thulla</b>. The trick stops instantly and the player who played the <b>highest card of the led suit picks up the whole pile</b>.</li>
+      <li>If nobody Thullas, the cards are discarded and the highest card of the led suit leads next.</li>
+      <li>Empty your hand to get away safely — the last player still holding cards is the Bhabhi.</li>
+      <li>The host can tweak <b>house rules</b> in the lobby: turn direction, when escapes count, and who leads after an escape.</li>
+    </ul>
+    <button id="howClose" class="btn btn-primary">Got it</button>
+  </div>
+</div>
+
+<div id="mobileOverlay" class="overlay hidden">
+  <div class="mobile-card">
+    <div class="mobile-emoji">💻</div>
+    <h2>Best on a laptop or desktop</h2>
+    <p class="muted">You're on a phone. For the best experience — a bigger table, easier card taps and smoother video — please open this game on a laptop or desktop computer.</p>
+    <div class="mobile-actions">
+      <button id="mobileContinue" class="btn btn-primary">Continue anyway</button>
+    </div>
+  </div>
+</div>
+
+<div id="toasts" class="toasts"></div>
+
+<!-- ===================== REMOTE AUDIO SINK ===================== -->
+<div id="audioSink" style="display:none"></div>
+
+<script src="/socket.io/socket.io.js"></script>
+<script src="/js/soundboard.js"></script>
+<script src="/js/webrtc.js"></script>
+<script src="/js/animations.js"></script>
+<script src="/js/app.js"></script>
+</body>
+</html>
