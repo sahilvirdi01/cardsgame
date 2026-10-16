@@ -24,6 +24,9 @@
     media: { mic: false, cam: false },
     micDeviceId: safeGet('bhabhi:mic'),
     camDeviceId: safeGet('bhabhi:cam'),
+    // Echo cancellation / noise suppression / auto-gain. Some laptop mic
+    // drivers hand back silence when these are requested, so it's toggleable.
+    audioProcessing: safeGet('bhabhi:proc') !== 'off',
     onUpdate: null,       // (peerId) => void
     onLocalChange: null,  // (media) => void
     onMicLevel: null,     // (0..1) => void
@@ -183,8 +186,13 @@
     const withDevice = (base) => (deviceId ? Object.assign({ deviceId: { exact: deviceId } }, base) : base);
     try {
       if (kind === 'audio') {
+        const proc = WebRTC.audioProcessing;
         return await md.getUserMedia({
-          audio: withDevice({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }),
+          audio: withDevice({
+            echoCancellation: proc,
+            noiseSuppression: proc,
+            autoGainControl: proc,
+          }),
         });
       }
       return await md.getUserMedia({
@@ -297,6 +305,20 @@
     } catch (e) { return []; }
   };
 
+  /** Toggle browser audio processing (AEC/NS/AGC) and re-acquire the mic. */
+  WebRTC.setAudioProcessing = async function (on) {
+    WebRTC.audioProcessing = !!on;
+    safeSet('bhabhi:proc', on ? 'on' : 'off');
+    const wasOn = WebRTC.media.mic;
+    WebRTC.stopMicMeter();
+    if (WebRTC.localStream) {
+      WebRTC.localStream.getAudioTracks().forEach((t) => {
+        t.onended = null; t.stop(); WebRTC.localStream.removeTrack(t);
+      });
+    }
+    if (wasOn) await WebRTC.setMic(true, WebRTC.micDeviceId);
+  };
+
   /* ---------------- microphone level meter (for self-diagnosis) ---------------- */
   let meter = null;
   WebRTC.startMicMeter = async function () {
@@ -306,6 +328,7 @@
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       const ac = new AC();
+      if (ac.state === 'suspended') { try { await ac.resume(); } catch (e) {} }
       const src = ac.createMediaStreamSource(new MediaStream([track]));
       const analyser = ac.createAnalyser();
       analyser.fftSize = 512;
@@ -340,6 +363,7 @@
     try {
       const AC = window.AudioContext || window.webkitAudioContext;
       const ac = new AC();
+      if (ac.state === 'suspended') { try { ac.resume(); } catch (e) {} }
       const src = ac.createMediaStreamSource(new MediaStream([track]));
       const gain = ac.createGain();
       gain.gain.value = 1;
