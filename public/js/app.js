@@ -266,16 +266,6 @@
     }
     refreshMicList();
   }
-  if ($('#micProcToggle')) {
-    $('#micProcToggle').checked = WebRTC.audioProcessing;
-    $('#micProcToggle').addEventListener('change', async (e) => {
-      Soundboard.unlock();
-      await WebRTC.setAudioProcessing(e.target.checked);
-      updateMediaButtons();
-      renderVideos();
-      toast(e.target.checked ? 'Audio processing on' : 'Audio processing off');
-    });
-  }
   let micPeak = 0;
   WebRTC.onMicLevel = (level) => {
     const bar = $('#micLevel');
