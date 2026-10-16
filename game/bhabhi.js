@@ -11,6 +11,8 @@
  *   - Everyone follows the lead suit if they can; otherwise they play any card,
  *     which is a THULLA: the trick stops and the highest card of the original
  *     lead suit collects the whole pile.
+ *   - The first trick is exempt (firstTrickToSaar): it always plays out fully
+ *     and its cards go to the saar, so nobody can get a Thulla on the opening turn.
  *   - Empty your hand and you escape. The last player holding cards is the Bhabhi.
  *
  * Regional variations are configurable (see DEFAULT_RULES):
@@ -27,6 +29,17 @@ const RANKS = [
 const DECKS_MAX = 4;
 
 const isRed = (suit) => suit === '♥' || suit === '♦';
+
+/** Default shuffle RNG. Prefer Node's crypto for a uniformly unbiased shuffle,
+ *  falling back to Math.random when crypto is unavailable (e.g. in a browser). */
+let defaultRng = Math.random;
+try {
+  // eslint-disable-next-line global-require
+  const nodeCrypto = require('crypto');
+  if (nodeCrypto && typeof nodeCrypto.randomInt === 'function') {
+    defaultRng = () => nodeCrypto.randomInt(0, 0x100000000) / 0x100000000;
+  }
+} catch (e) { /* keep Math.random */ }
 
 function buildDeck(numDecks) {
   const deck = [];
@@ -55,6 +68,7 @@ const DEFAULT_RULES = {
   escapeLead: 'nextActive', // 'nextActive' | 'drawFromSaar'
   requireOpeningAce: true,  // the opener must play A♠
   autoPlayOpeningAce: false,// if true the engine plays the opening A♠ itself
+  firstTrickToSaar: true,   // opening trick plays out and sweeps to the saar: no thulla
   shuffleFn: null,          // optional deterministic rng for tests
 };
 
@@ -63,7 +77,7 @@ class BhabhiGame {
     if (!Array.isArray(players) || players.length < 2) {
       throw new Error('BhabhiGame needs at least 2 players');
     }
-    this.rng = opts.rng || opts.rules?.shuffleFn || Math.random;
+    this.rng = opts.rng || opts.rules?.shuffleFn || defaultRng;
     this.rules = Object.assign({}, DEFAULT_RULES, opts.rules || {});
     this._normaliseRules();
 
@@ -103,6 +117,7 @@ class BhabhiGame {
     if (!['nextActive', 'drawFromSaar'].includes(r.escapeLead)) r.escapeLead = 'nextActive';
     r.requireOpeningAce = r.requireOpeningAce !== false;
     r.autoPlayOpeningAce = r.autoPlayOpeningAce === true;
+    r.firstTrickToSaar = r.firstTrickToSaar !== false;
   }
 
   _deckCount() {
@@ -235,6 +250,9 @@ class BhabhiGame {
     player.hand.splice(idx, 1);
     this.turnCount++;
     const isThulla = !leading && card.suit !== this.trick.ledSuit;
+    // The opening/first trick always plays out to the saar, so no thulla can bite yet.
+    const firstTrick = this.rules.firstTrickToSaar && this.tricks === 0;
+    const effectiveThulla = isThulla && !firstTrick;
     const pub = this._pub(card);
     this.trick.plays.push({ playerId: player.id, card: pub, order: this.trick.plays.length });
     if (card.suit === this.trick.ledSuit) {
@@ -243,7 +261,7 @@ class BhabhiGame {
       }
     }
 
-    const events = [{ type: 'play', playerId: player.id, card: pub, thulla: isThulla }];
+    const events = [{ type: 'play', playerId: player.id, card: pub, thulla: effectiveThulla }];
 
     if (leading) {
       this.phase = 'playing';
@@ -253,8 +271,8 @@ class BhabhiGame {
       this.trick.responders = this.trick.responders.filter((id) => id !== player.id);
     }
 
-    if (isThulla || this.trick.responders.length === 0) {
-      this._resolveTrick(isThulla, events);
+    if (effectiveThulla || this.trick.responders.length === 0) {
+      this._resolveTrick(effectiveThulla, events);
     } else {
       this.turnId = this.trick.responders[0];
     }
@@ -264,6 +282,7 @@ class BhabhiGame {
 
   _resolveTrick(wasThulla, events) {
     const trick = this.trick;
+    const firstTrick = this.rules.firstTrickToSaar && this.tricks === 0;
     this.tricks++;
     const playsForEvent = trick.plays.slice();
 
@@ -272,9 +291,11 @@ class BhabhiGame {
       .sort((a, b) => b.card.value - a.card.value || a.order - b.order);
     const top = leadPlays[0] || trick.plays[0];
 
-    // Who collects the pile, if anyone.
+    // Who collects the pile, if anyone. The first trick never collects — it sweeps.
     let collectorId = null;
-    if (wasThulla) {
+    if (firstTrick) {
+      collectorId = null;
+    } else if (wasThulla) {
       const canCollect = (pl) =>
         !(this.rules.escapeTiming === 'immediate' && this.get(pl.playerId).hand.length === 0);
       collectorId = (leadPlays.find(canCollect) || top).playerId;

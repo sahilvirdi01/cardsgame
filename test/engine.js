@@ -116,6 +116,83 @@ function testIllegalMoveImmutability() {
   console.log('  illegal-move immutability OK');
 }
 
+function testFirstTrickToSaar() {
+  for (let seed = 1; seed <= 12; seed++) {
+    const g = new BhabhiGame(makePlayers(4), { rng: mulberry32(seed) });
+    const plays = [];
+    let resolved = null;
+    while (!g.over && !resolved) {
+      const id = g.turnId;
+      const res = g.playCard(id, g.legalMoves(id)[0]);
+      assert(res.ok, `seed ${seed}: ${res.error}`);
+      for (const e of res.events) {
+        if (e.type === 'play') plays.push(e);
+        if (e.type === 'sweep' || e.type === 'pickup') resolved = e;
+      }
+    }
+    assert(resolved, `seed ${seed}: first trick never resolved`);
+    assert.strictEqual(resolved.type, 'sweep', `seed ${seed}: first trick was ${resolved.type}, expected sweep`);
+    assert(plays.length >= 2, `seed ${seed}: first trick had too few plays`);
+    assert(plays.every((e) => !e.thulla), `seed ${seed}: a thulla was flagged on the first trick`);
+  }
+
+  // With the rule disabled the old behaviour is allowed again.
+  const off = new BhabhiGame(makePlayers(4), { rng: mulberry32(1), rules: { firstTrickToSaar: false } });
+  assert.strictEqual(off.rules.firstTrickToSaar, false, 'rule override not honoured');
+  console.log('  first trick sweeps to saar (no thulla) OK');
+}
+
+function testFirstTrickOffSuitNotThulla() {
+  // p0 leads ♥; neither opponent holds a heart, so both must play off-suit.
+  // On the first trick that must NOT count as a thulla and the pile must sweep.
+  const g = new BhabhiGame(makePlayers(3), { rules: { requireOpeningAce: false }, rng: mulberry32(5) });
+  g.phase = 'playing';
+  g.over = false;
+  g.tricks = 0;
+  g.trick = null;
+  g.players.forEach((p) => { p.out = false; p.escapedOrder = null; });
+  g.players[0].hand = [
+    { id: 'lead-h5', rank: '5', value: 5, suit: '♥', red: true },
+    { id: 'p0-a', rank: '2', value: 2, suit: '♠', red: false },
+  ];
+  g.players[1].hand = [
+    { id: 'p1-a', rank: '3', value: 3, suit: '♣', red: false },
+    { id: 'p1-b', rank: '4', value: 4, suit: '♠', red: false },
+  ];
+  g.players[2].hand = [
+    { id: 'p2-a', rank: '6', value: 6, suit: '♦', red: true },
+    { id: 'p2-b', rank: '7', value: 7, suit: '♠', red: false },
+  ];
+  g.leaderId = 'p0';
+  g.turnId = 'p0';
+
+  const discardBefore = g.discard.length;
+  const events = [];
+  for (const [pid, card] of [['p0', 'lead-h5'], ['p1', 'p1-a'], ['p2', 'p2-a']]) {
+    const res = g.playCard(pid, card);
+    assert(res.ok, `off-suit follow rejected: ${res.error}`);
+    events.push(...res.events);
+  }
+
+  const plays = events.filter((e) => e.type === 'play');
+  assert.strictEqual(plays.length, 3, 'first trick should have 3 plays');
+  assert(plays.every((e) => !e.thulla), 'first-trick off-suit was flagged as a thulla');
+  assert(!events.some((e) => e.type === 'pickup'), 'first trick must not pick up');
+  const sweep = events.find((e) => e.type === 'sweep');
+  assert(sweep && sweep.winnerId === 'p0', 'first trick should sweep to the saar (p0 highest lead suit)');
+  assert.strictEqual(g.discard.length, discardBefore + 3, 'first-trick cards should go to the saar');
+  assert.strictEqual(g.turnId, 'p0', 'highest lead-suit card should lead next');
+  console.log('  first-trick off-suit is not a thulla and sweeps OK');
+}
+
+function testDealsVary() {
+  const sig = (g) => g.players.map((p) => p.hand.map((c) => c.id).join(',')).join('|');
+  const seen = new Set();
+  for (let i = 0; i < 20; i++) seen.add(sig(new BhabhiGame(makePlayers(4))));
+  assert(seen.size >= 19, `fresh deals repeat too often (${seen.size}/20 unique)`);
+  console.log('  fresh deals vary between games OK');
+}
+
 function testHiddenInfo() {
   const g = new BhabhiGame(makePlayers(5), { rng: mulberry32(11) });
   const view = g.viewFor('p0');
@@ -145,6 +222,9 @@ function testDeck() {
   testDeck();
   testOpeningAce();
   testIllegalMoveImmutability();
+  testFirstTrickToSaar();
+  testFirstTrickOffSuitNotThulla();
+  testDealsVary();
   testHiddenInfo();
   testRuleVariations();
   testTerminationAndIntegrity();

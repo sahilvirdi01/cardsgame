@@ -718,6 +718,12 @@
 
   // Collapsed / expanded fan geometry (px) for the trick pile.
   const PILE = { gap: 26, tilt: 2.6, gapHover: 46, tiltHover: 0 };
+  // Bumped on every pile rebuild so a delayed sweep/pickup fly can bail out if
+  // a newer play has already re-rendered the pile.
+  let pileRenderToken = 0;
+  // How long the finished trick stays on the felt before it flies off, so the
+  // last-played card is actually seen (its fly-in takes ~420ms).
+  const TRICK_LINGER_MS = 780;
   function pileTransform(k, gap, tilt) {
     const x = (k * gap).toFixed(1);
     return `translateX(calc(-50% + ${x}px)) rotate(${(k * tilt).toFixed(2)}deg)`;
@@ -730,6 +736,7 @@
     // pile permanently invisible — the original "cards disappear" bug.
     pile.classList.remove('anim-sweep', 'anim-pickup', 'flash-red');
     pile.innerHTML = '';
+    pileRenderToken++;
     const resolveEv = events.find((e) => (e.type === 'pickup' || e.type === 'sweep') && e.plays);
     const plays = view.trick ? view.trick.plays : (resolveEv ? resolveEv.plays : []);
     const n = plays.length;
@@ -862,6 +869,18 @@
     }
   }
 
+  /** Keep the finished trick on the felt for a beat, then fly it to `targetEl`.
+   *  Bails out if the pile was rebuilt by a newer play in the meantime. */
+  function lingerThenFly(targetEl, opts = {}) {
+    const pile = $('#pile');
+    const token = pileRenderToken;
+    setTimeout(() => {
+      if (token !== pileRenderToken) return;
+      if (opts.sound) Soundboard.sfx('shuffle');
+      Anim.flyPileAway(pile, targetEl, opts);
+    }, TRICK_LINGER_MS);
+  }
+
   function handleEvent(ev, view, players) {
     if (ev.type === 'autoplay') {
       const me = ev.playerId === view.you.id;
@@ -891,15 +910,15 @@
         seat.classList.add('hit');
         setTimeout(() => seat.classList.remove('hit'), 800);
       }
-      // Slide the whole pile into the collector's deck.
-      Anim.flyPileAway($('#pile'), seat, { duration: 620, stagger: 42, scale: 0.35, rotate: 14 });
+      // Let the trick sit on the felt briefly, then slide it into the collector.
+      lingerThenFly(seat, { duration: 820, stagger: 55, scale: 0.35, rotate: 14 });
     }
     if (ev.type === 'sweep') {
       const seat = document.querySelector(`.seat[data-player-id="${ev.winnerId}"]`);
       if (seat) seat.classList.add('flash-red');
-      Soundboard.sfx('shuffle');
-      // Slide the beaten trick into the Saar pile.
-      Anim.flyPileAway($('#pile'), $('#saarStack') || $('#saar'), { duration: 600, stagger: 42, scale: 0.5 });
+      // Let the trick sit on the felt briefly so everyone sees it, then a slow
+      // slide into the Saar pile.
+      lingerThenFly($('#saarStack') || $('#saar'), { duration: 950, stagger: 60, scale: 0.5, sound: true });
     }
     if (ev.type === 'out') {
       ev.playerIds.forEach((id) => {
