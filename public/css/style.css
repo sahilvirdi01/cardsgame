@@ -159,7 +159,6 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 .game-layout{flex:1;display:grid;grid-template-columns:320px 1fr;gap:.9rem;padding:.9rem;min-height:0}
 @media(max-width:960px){
   .game-layout{grid-template-columns:1fr;padding:.5rem .6rem}
-  .stats-panel{display:none}
 }
 
 /* ---------- stats panel (left) ---------- */
@@ -479,7 +478,12 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 
   /* Game: fit the table, shrink cards and seats */
   .game-layout{padding:.4rem}
-  .table{place-items:stretch}
+
+  /* Trim the side panel down to just the live player list */
+  .stats-head{display:none}
+  .stat-block.stat-extra{display:none}
+  .stats-panel{max-height:34vh}
+  .stats-body{padding:.2rem .5rem}
   .table-felt{width:100%;aspect-ratio:4/3;border-width:8px;border-radius:22%}
   .table-head{padding:0 .2rem .3rem}
   .th-label{font-size:.62rem;letter-spacing:.1rem}

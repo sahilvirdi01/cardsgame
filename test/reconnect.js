@@ -18,7 +18,7 @@ async function waitForServer() {
 
 function client(name) {
   const socket = io(URL, { transports: ['websocket'] });
-  const c = { socket, name, id: null, token: null, view: null, over: false, loserId: null, events: [], autoPlays: 0, conns: [] };
+  const c = { socket, name, id: null, token: null, view: null, over: false, loserId: null, events: [], autoPlays: 0, conns: [], chats: [], history: [] };
   socket.on('state', ({ view, events }) => {
     c.view = view;
     c.events.push(...events);
@@ -31,6 +31,8 @@ function client(name) {
     }
   });
   socket.on('playerConnection', (m) => c.conns.push(m));
+  socket.on('chat', (m) => c.chats.push(m));
+  socket.on('chatHistory', ({ messages }) => { c.history = messages; });
   c.join = (roomId, playerId) => new Promise((res) => {
     socket.emit('join', { nickname: name, roomId, playerId }, (r) => {
       if (r && r.ok) { c.id = r.playerId; c.token = r.playerId; }
@@ -61,7 +63,7 @@ async function testGraceAutoPlay() {
   a.socket.close();
 }
 
-async function testReclaim() {
+async function testReclaimAndHistory() {
   const a = client('RA');
   const a1 = await a.join(null);
   const b = client('RB');
@@ -71,15 +73,36 @@ async function testReclaim() {
   await wait(80);
   const rbId = b.id;
   b.socket.disconnect();
-  await wait(150); // within grace
+  await wait(100); // still within the grace window
+  a.socket.emit('chat', { text: 'sent while you were away' });
+  await wait(40);
   const b2 = client('RB');
   const res = await b2.join(a1.roomId, rbId);
   assert(res.ok && res.reconnected, 'reconnect was not accepted');
   await wait(60);
   assert(b2.view, 'no state after reconnect');
   assert.strictEqual(b2.id, rbId, 'seat id changed on reconnect');
-  console.log('  seat reclaim within grace OK');
+  const texts = b2.history.map((m) => m.text);
+  assert(texts.includes('sent while you were away'), 'reconnecting player missed chat history');
+  console.log('  seat reclaim + missed chat within grace OK');
   a.socket.close(); b2.socket.close();
+}
+
+async function testChatHistoryOnJoin() {
+  const a = client('CA');
+  const a1 = await a.join(null);
+  a.socket.emit('chat', { text: 'before you arrived' });
+  a.socket.emit('chat', { text: 'second message' });
+  await wait(40);
+  const b = client('CB');
+  await b.join(a1.roomId);
+  await wait(60);
+  const texts = b.history.map((m) => m.text);
+  assert(texts.includes('before you arrived') && texts.includes('second message'),
+    'new joiner did not get chat history: ' + JSON.stringify(texts));
+  assert.strictEqual(b.history[0].nickname, 'CA', 'history missing sender nickname');
+  console.log('  chat backlog delivered to new joiner OK');
+  a.socket.close(); b.socket.close();
 }
 
 async function testNewJoinBlocked() {
@@ -105,7 +128,8 @@ async function testNewJoinBlocked() {
   try {
     await waitForServer();
     await testGraceAutoPlay();
-    await testReclaim();
+    await testReclaimAndHistory();
+    await testChatHistoryOnJoin();
     await testNewJoinBlocked();
     console.log('\nRECONNECT TESTS PASSED');
     process.exitCode = 0;

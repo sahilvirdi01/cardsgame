@@ -46,6 +46,9 @@ app.get('/healthz', (_req, res) => res.json({ ok: true, rooms: rooms.size }));
 /** roomId -> Room */
 const rooms = new Map();
 
+/** Most recent chat messages kept per room so late/reconnecting players can catch up. */
+const MAX_CHAT_HISTORY = 200;
+
 function makeRoomId() {
   const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let id;
@@ -106,6 +109,13 @@ function broadcastState(room, events = []) {
 
 function roomOf(socket) {
   return socket.data.roomId ? rooms.get(socket.data.roomId) : null;
+}
+
+/** Replay the room's chat backlog to a player who just (re)joined. */
+function sendChatHistory(socket, room) {
+  if (room.chat && room.chat.length) {
+    socket.emit('chatHistory', { messages: room.chat });
+  }
 }
 
 /* ------------------------------------------------------ disconnect timers */
@@ -242,6 +252,7 @@ io.on('connection', (socket) => {
         id: p.id, nickname: p.nickname, connected: true, away: false,
       });
       broadcastLobby(room);
+      sendChatHistory(socket, room);
       if (room.game) socket.emit('state', { view: room.game.viewFor(p.id), events: [] });
       return;
     }
@@ -261,6 +272,7 @@ io.on('connection', (socket) => {
         started: false,
         rules: {},
         autoTimer: null,
+        chat: [],
       };
       rooms.set(id, room);
       created = true;
@@ -288,6 +300,7 @@ io.on('connection', (socket) => {
 
     if (ack) ack({ ok: true, roomId: room.id, playerId: id, nickname, created, started: !!room.game });
     broadcastLobby(room);
+    sendChatHistory(socket, room);
   });
 
   socket.on('setRules', (msg) => {
@@ -383,11 +396,17 @@ io.on('connection', (socket) => {
     const text = String((msg && msg.text) || '').slice(0, 200).trim();
     if (!text) return;
     const sender = room.players.get(socket.data.playerId);
-    io.to(room.id).emit('chat', {
+    const entry = {
       from: socket.data.playerId,
       nickname: sender ? sender.nickname : '?',
       text,
-    });
+      ts: Date.now(),
+    };
+    room.chat.push(entry);
+    if (room.chat.length > MAX_CHAT_HISTORY) {
+      room.chat.splice(0, room.chat.length - MAX_CHAT_HISTORY);
+    }
+    io.to(room.id).emit('chat', entry);
   });
 
   // ---- Media state (mic/cam indicators) ----

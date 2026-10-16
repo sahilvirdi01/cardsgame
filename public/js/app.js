@@ -340,6 +340,11 @@
   socket.on('chat', ({ nickname, text }) => {
     addChat(`<b>${esc(nickname)}:</b> ${esc(text)}`);
   });
+  // Replay the room's backlog so a reconnecting player hasn't missed anything.
+  socket.on('chatHistory', ({ messages }) => {
+    $$('.chat-log').forEach((log) => { log.innerHTML = ''; });
+    (messages || []).forEach((m) => addChat(`<b>${esc(m.nickname)}:</b> ${esc(m.text)}`));
+  });
   $('#chatBtn').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
   $('#chatFootBtn').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
   $('#chatClose').addEventListener('click', () => $('#sidebar').classList.remove('open'));
