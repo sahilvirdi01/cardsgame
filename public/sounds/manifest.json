@@ -14,5 +14,5 @@
   { "id": "oh_janda_e", "label": "Oh Janda E", "emoji": "💃", "file": "/sounds/oh_janda_e.mp3" },
   { "id": "rom-rom-bhaiyo", "label": "Rom Rom Bhaiyo", "emoji": "🙏", "file": "/sounds/rom-rom-bhaiyo.mp3" },
   { "id": "ruko-zara-sabar-karo", "label": "Ruko zara, sabar karo", "emoji": "✋", "file": "/sounds/ruko-zara-sabar-karo.mp3" },
-  { "id": "dukki_baadshah", "label": "dukki - baadsheh", "emoji": "✋", "file": "dukki_baadshah.mp3" }
+  { "id": "dukki_baadshah", "label": "Dukki - Badshah", "emoji": "✋", "file": "/sounds/dukki_baadshah.mp3" }
 ]

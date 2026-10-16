@@ -12,8 +12,9 @@ A real-time multiplayer browser card game for the classic Indian shedding game *
 - 🎙️ **Peer-to-peer voice & video** over WebRTC (mesh) with mic/camera indicators in the lobby.
 - 🔊 **Soundboard** — fire off desi meme sounds so everyone hears them in real time.
 - 😂 **GIF reactions & animations** — "THULLA!" takedown overlay, deal animation, winner/loser reveal.
-- 💬 **Live chat** and table stats.
-- 📱 **Responsive UI** with a dedicated desktop-first layout.
+- 💬 **Live chat** in both the lobby and the game, plus table stats.
+- 🔄 **Reconnect-safe** — if a player drops mid-game the table pauses for them for a grace period, then auto-plays a random legal card so play keeps moving. Refreshing the page rejoins your seat automatically.
+- 📱 **Responsive UI** — a clean, simplified layout on phones (no table stats or camera grid clutter), fuller desktop layout on bigger screens.
 
 ## Tech stack
 
@@ -73,7 +74,8 @@ npm run test:e2e      # boots the real server and plays full games
 │   └── gen-gifs.sh      # Regenerate the GIF reaction library (needs ImageMagick)
 └── test/
     ├── engine.js        # Deterministic engine tests
-    └── e2e.js           # Full multiplayer end-to-end test
+    ├── e2e.js           # Full multiplayer end-to-end test
+    └── reconnect.js     # Drop-out grace period, auto-play & seat reclaim
 ```
 
 ## How to play

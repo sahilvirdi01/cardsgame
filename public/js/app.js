@@ -7,12 +7,32 @@
   const APP = {
     roomId: null,
     selfId: null,
+    nickname: null,
     isHost: false,
     lobby: null,
     lastView: null,
     ready: false,
     sittingOut: false,
   };
+
+  // Wire the WebRTC signalling layer to the socket. Without this no offers,
+  // answers or ICE candidates are ever exchanged and media stays local-only.
+  WebRTC.init(socket);
+
+  /* ---------------- session persistence (for reconnect) ---------------- */
+  function saveSession() {
+    try {
+      sessionStorage.setItem('bhabhi:session', JSON.stringify({
+        roomId: APP.roomId, playerId: APP.selfId, nickname: APP.nickname,
+      }));
+    } catch (e) { /* ignore */ }
+  }
+  function clearSession() {
+    try { sessionStorage.removeItem('bhabhi:session'); } catch (e) { /* ignore */ }
+  }
+  function loadSession() {
+    try { return JSON.parse(sessionStorage.getItem('bhabhi:session') || 'null'); } catch (e) { return null; }
+  }
 
   /* ---------------- utils ---------------- */
   function toast(message, kind) {
@@ -48,20 +68,58 @@
   const saved = localStorage.getItem('bhabhi:nick') || '';
   if (saved) $('#nicknameInput').value = saved;
 
+  function handleJoinRes(res, opts = {}) {
+    if (!res || !res.ok) {
+      if (opts.reconnect) {
+        clearSession();
+        if (APP.roomId) { APP.roomId = null; APP.selfId = null; showScreen('home'); }
+        toast('Could not rejoin the room — it may have ended.', 'error');
+      } else {
+        $('#homeError').textContent = (res && res.error) || 'Could not join.';
+      }
+      return false;
+    }
+    APP.roomId = res.roomId;
+    APP.selfId = res.playerId;
+    APP.nickname = res.nickname || APP.nickname;
+    WebRTC.selfId = res.playerId;
+    saveSession();
+    $('#homeError').textContent = '';
+    if (res.started) {
+      APP.ready = true; // skip the deal animation when dropping back into a game
+      showScreen('game');
+    } else {
+      showScreen('lobby');
+    }
+    toast((res.reconnected ? 'Reconnected to ' : 'Joined room ') + res.roomId, 'sound');
+    return true;
+  }
+
   function doJoin(roomId) {
     const nickname = $('#nicknameInput').value.trim();
     if (!nickname) { $('#homeError').textContent = 'Please enter a nickname.'; return; }
     localStorage.setItem('bhabhi:nick', nickname);
+    APP.nickname = nickname;
     Soundboard.unlock();
-    socket.emit('join', { nickname, roomId }, (res) => {
-      if (!res || !res.ok) { $('#homeError').textContent = (res && res.error) || 'Could not join.'; return; }
-      APP.roomId = res.roomId;
-      APP.selfId = res.playerId;
-      WebRTC.selfId = res.playerId;
-      $('#homeError').textContent = '';
-      showScreen('lobby');
-      toast('Joined room ' + res.roomId, 'sound');
-    });
+    socket.emit('join', { nickname, roomId }, (res) => handleJoinRes(res, { reconnect: false }));
+  }
+
+  let reconnecting = false;
+  function attemptReconnect() {
+    if (reconnecting) return;
+    const s = loadSession();
+    if (!s || !s.roomId || !s.playerId) return;
+    reconnecting = true;
+    APP.nickname = s.nickname || localStorage.getItem('bhabhi:nick') || 'Player';
+    socket.timeout(6000).emit(
+      'join',
+      { roomId: s.roomId, playerId: s.playerId, nickname: APP.nickname },
+      (err, res) => {
+        reconnecting = false;
+        if (err) return; // timed out — retry on the next connect
+        handleJoinRes(res, { reconnect: true });
+      }
+    );
   }
 
   $('#createBtn').addEventListener('click', () => doJoin(null));
@@ -74,19 +132,6 @@
   const closeEl = (el) => el.classList.add('hidden');
   $('#howBtn').addEventListener('click', () => openEl($('#howOverlay')));
   $('#howClose').addEventListener('click', () => closeEl($('#howOverlay')));
-
-  /* ---------------- mobile notice ---------------- */
-  function isMobileDevice() {
-    const ua = navigator.userAgent || '';
-    const uaMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini|Mobile/i.test(ua);
-    const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-    const small = Math.min(window.innerWidth, window.innerHeight) < 820;
-    return uaMobile || (coarse && small);
-  }
-  $('#mobileContinue').addEventListener('click', () => {
-    closeEl($('#mobileOverlay'));
-    try { sessionStorage.setItem('bhabhi:mobile-notice', '1'); } catch (e) {}
-  });
 
   /* ---------------- room chip ---------------- */
   function setRoomCode(code) {
@@ -112,10 +157,16 @@
     l.players.forEach((p) => {
       const li = document.createElement('li');
       const initial = p.nickname.slice(0, 1).toUpperCase();
+      const offline = p.connected === false;
+      li.className = offline ? 'offline' : '';
+      const status = p.away
+        ? '<span class="host-tag away-tag">AWAY</span>'
+        : (offline ? '<span class="host-tag away-tag">RECONNECTING…</span>' : '');
       li.innerHTML =
         `<span class="avatar">${initial}</span>` +
         `<span class="nm">${p.nickname}${p.id === APP.selfId ? ' (you)' : ''}</span>` +
         `<span class="medias">${p.mic ? '🎤' : ''}${p.cam ? '📷' : ''}</span>` +
+        status +
         (p.isHost ? '<span class="host-tag">HOST</span>' : '');
       ul.appendChild(li);
     });
@@ -187,9 +238,12 @@
 
   function renderVideos() {
     const list = (APP.lobby && APP.lobby.players) || [];
-    const views = list.map((p) => ({ id: p.id, nickname: p.nickname, mic: p.mic, cam: p.cam, isYou: p.id === APP.selfId }));
+    const views = list.map((p) => ({
+      id: p.id, nickname: p.nickname, mic: p.mic, cam: p.cam,
+      connected: p.connected !== false, away: !!p.away, isYou: p.id === APP.selfId,
+    }));
     if (!views.find((v) => v.isYou) && APP.selfId) {
-      views.unshift({ id: 'self', nickname: 'You', mic: WebRTC.media.mic, cam: WebRTC.media.cam, isYou: true });
+      views.unshift({ id: 'self', nickname: 'You', mic: WebRTC.media.mic, cam: WebRTC.media.cam, connected: true, away: false, isYou: true });
     }
     renderGrid($('#lobbyVideoGrid'), 'lobby', views);
     renderGrid($('#sideVideoGrid'), 'side', views);
@@ -223,7 +277,9 @@
       t.video.muted = true; // remote audio plays through the dedicated audio sink
       const stream = peerId === 'self' ? WebRTC.localStream : (WebRTC.peers.get(peerId) || {}).stream;
       if (stream && t.video.srcObject !== stream) t.video.srcObject = stream;
-      const hasVideo = stream && stream.getVideoTracks().some((tr) => tr.enabled && tr.readyState === 'live');
+      const liveVideo = stream && stream.getVideoTracks().some((tr) => tr.readyState === 'live');
+      const hasVideo = !!v.cam && !!liveVideo;
+      t.off.textContent = v.connected === false ? '📡' : '🎥';
       t.off.style.display = hasVideo ? 'none' : 'grid';
       t.name.textContent = v.nickname;
       t.icons.textContent = (v.mic ? '🎤' : '🔇') + (v.cam ? '📷' : '');
@@ -262,19 +318,23 @@
 
   /* ---------------- chat ---------------- */
   function addChat(line, cls) {
-    const log = $('#chatLog');
-    const div = document.createElement('div');
-    div.className = 'chat-line' + (cls ? ' ' + cls : '');
-    div.innerHTML = line;
-    log.appendChild(div);
-    log.scrollTop = log.scrollHeight;
+    $$('.chat-log').forEach((log) => {
+      const div = document.createElement('div');
+      div.className = 'chat-line' + (cls ? ' ' + cls : '');
+      div.innerHTML = line;
+      log.appendChild(div);
+      log.scrollTop = log.scrollHeight;
+    });
   }
-  $('#chatForm').addEventListener('submit', (e) => {
-    e.preventDefault();
-    const text = $('#chatInput').value.trim();
-    if (!text) return;
-    socket.emit('chat', { text });
-    $('#chatInput').value = '';
+  $$('.chat-form').forEach((form) => {
+    form.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = form.querySelector('input');
+      const text = (input.value || '').trim();
+      if (!text) return;
+      socket.emit('chat', { text });
+      input.value = '';
+    });
   });
   const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   socket.on('chat', ({ nickname, text }) => {
@@ -307,6 +367,7 @@
   /* ---------------- leaving ---------------- */
   function leave() {
     if (!confirm('Leave the room?')) return;
+    clearSession();
     WebRTC.cleanup();
     try { socket.disconnect(); } catch (e) {}
     location.href = '/';
@@ -315,8 +376,28 @@
   $('#playAgainBtn').addEventListener('click', () => socket.emit('restart'));
 
   /* ---------------- socket events ---------------- */
-  socket.on('connect', () => { WebRTC.selfId = socket.id; });
-  socket.on('lobby', (l) => { APP.lobby = l; APP.selfId = socket.id; renderLobby(); });
+  socket.on('connect', () => {
+    if (APP.selfId) WebRTC.selfId = APP.selfId;
+    attemptReconnect();
+  });
+  socket.on('lobby', (l) => { APP.lobby = l; renderLobby(); });
+  socket.on('playerConnection', ({ id, nickname, connected, away, graceMs }) => {
+    if (APP.lobby && APP.lobby.players) {
+      const p = APP.lobby.players.find((x) => x.id === id);
+      if (p) { p.connected = connected; p.away = !!away; }
+    }
+    if (!connected && !away) {
+      const secs = Math.max(1, Math.round((graceMs || 8000) / 1000));
+      toast(`${nickname} lost connection — waiting ${secs}s…`, 'error');
+    } else if (!connected && away) {
+      toast(`${nickname} is away — auto-playing their turns`, 'error');
+    } else if (connected) {
+      WebRTC.removePeer(id);
+      toast(`${nickname} is back!`, 'sound');
+    }
+    renderLobby();
+    if (APP.ready && APP.lastView) renderGame(APP.lastView, []);
+  });
   socket.on('notice', (n) => toast(n.message, n.type === 'error' ? 'error' : ''));
 
   socket.on('peerMedia', ({ id, mic, cam }) => {
@@ -348,10 +429,13 @@
   socket.on('state', ({ view, events }) => {
     APP.lastView = view;
     APP.lobby = APP.lobby || {};
-    APP.lobby.players = view.players.map((p) => ({
-      id: p.id, nickname: p.nickname, mic: (APP.lobby.players || []).find((x) => x.id === p.id)?.mic,
-      cam: (APP.lobby.players || []).find((x) => x.id === p.id)?.cam,
-    }));
+    APP.lobby.players = view.players.map((p) => {
+      const prev = (APP.lobby.players || []).find((x) => x.id === p.id) || {};
+      return {
+        id: p.id, nickname: p.nickname, mic: prev.mic, cam: prev.cam,
+        connected: prev.connected !== false, away: !!prev.away,
+      };
+    });
     WebRTC.syncPeers(view.players.map((p) => p.id));
     if (!APP.ready) { APP.pending = { view, events }; return; }
     renderGame(view, events);
@@ -621,6 +705,14 @@
       return;
     }
     const opening = view.phase === 'opening';
+    const turnPlayer = (APP.lobby && APP.lobby.players || []).find((x) => x.id === view.turnId);
+    if (turnPlayer && turnPlayer.connected === false && view.turnId !== view.you.id) {
+      b.textContent = turnPlayer.away
+        ? `${playerName(view.turnId)} is away — auto-playing…`
+        : `${playerName(view.turnId)} lost connection — waiting…`;
+      b.className = 'turn-banner wait';
+      return;
+    }
     if (view.turnId === view.you.id) {
       b.textContent = opening
         ? 'Your turn — open with the Ace of Spades ♠'
@@ -636,6 +728,11 @@
   }
 
   function handleEvent(ev, view, players) {
+    if (ev.type === 'autoplay') {
+      const me = ev.playerId === view.you.id;
+      toast(me ? 'You are away — a random card was auto-played for you'
+        : `${playerName(ev.playerId)} is away — auto-played a card`, 'error');
+    }
     if (ev.type === 'play' && ev.thulla) {
       toast(`${playerName(ev.playerId)} played a Thulla!`, 'error');
     }
@@ -702,11 +799,6 @@
 
   /* ---------------- boot ---------------- */
   (async function boot() {
-    if (isMobileDevice()) {
-      let seen = false;
-      try { seen = sessionStorage.getItem('bhabhi:mobile-notice') === '1'; } catch (e) {}
-      if (!seen) openEl($('#mobileOverlay'));
-    }
     Anim.loadGifs();
     try {
       const r = await fetch('/sounds/manifest.json', { cache: 'no-cache' });
@@ -716,5 +808,9 @@
     window.addEventListener('resize', () => { if (APP.lastView && APP.ready) renderHand(APP.lastView); });
   })();
 
-  document.addEventListener('click', () => Soundboard.unlock(), { once: true });
+  // Unlock audio and remote peer audio on the first (and any) user gesture.
+  document.addEventListener('pointerdown', () => {
+    Soundboard.unlock();
+    WebRTC.resumeAudio();
+  });
 })();

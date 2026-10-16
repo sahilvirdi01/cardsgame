@@ -453,6 +453,83 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 .toast.sound{border-color:var(--gold)}
 @keyframes toastIn{0%{opacity:0;transform:translateY(-14px)}100%{opacity:1;transform:none}}
 
+/* ---------- lobby chat ---------- */
+.lobby-chat{grid-column:1 / -1;display:flex;flex-direction:column}
+.lobby-chat .chat-log{flex:none;height:180px}
+
+/* ---------- connection status ---------- */
+.player-list li.offline{opacity:.55}
+.player-list li.offline .avatar{filter:grayscale(.65)}
+.host-tag.away-tag{color:#ffb4b6;border-color:rgba(229,72,77,.5)}
+
+/* ---------- mobile / small screens ---------- */
+@media(max-width:760px){
+  .topbar{gap:.4rem;padding:.45rem .55rem}
+  .brand{font-size:.92rem}
+  .icon-btn{width:34px;height:34px;font-size:1rem;border-radius:9px}
+  .room-chip{font-size:.72rem;padding:.28rem .5rem}
+  .link-btn{display:none}
+
+  /* Lobby: one column, drop the camera/mic panel (optional feature) */
+  .lobby-grid{grid-template-columns:1fr;gap:.6rem;padding:.6rem}
+  .panel{padding:.85rem;border-radius:16px}
+  .cam-panel{display:none}
+  .lobby-chat{grid-column:auto}
+  .lobby-chat .chat-log{height:150px}
+
+  /* Game: fit the table, shrink cards and seats */
+  .game-layout{padding:.4rem}
+  .table{place-items:stretch}
+  .table-felt{width:100%;aspect-ratio:4/3;border-width:8px;border-radius:22%}
+  .table-head{padding:0 .2rem .3rem}
+  .th-label{font-size:.62rem;letter-spacing:.1rem}
+  .th-meta{font-size:.6rem;letter-spacing:.06rem}
+
+  .seat{width:68px}
+  .seats.many .seat{width:60px}
+  .seat-avatar{width:32px;height:32px;font-size:.86rem}
+  .seats.many .seat-avatar{width:26px;height:26px;font-size:.74rem}
+  .seat-name{font-size:.6rem;max-width:68px;padding:.05rem .35rem}
+  .seats.many .seat-name{font-size:.56rem;max-width:60px}
+  .seat-role{font-size:.5rem;min-height:.7rem}
+  .seat-count{font-size:.55rem}
+  .seat-bar{max-width:60px}
+  .seat-bar i{width:3px;height:4px}
+
+  .card{width:56px;height:80px;padding:4px 5px}
+  .card .tl,.card .br{font-size:.8rem}
+  .card .pip{font-size:1.35rem}
+  .card.small{width:42px;height:60px;padding:2px 3px}
+  .card.small .tl,.card.small .br{font-size:.62rem}
+  .card.small .pip{font-size:1rem}
+
+  .pile{width:42px;height:60px}
+  .hand{height:116px;padding-top:30px}
+  .your-area{padding:.15rem .5rem .5rem}
+  .your-line{gap:.5rem}
+  .turn-banner{font-size:.85rem}
+  .suggest-btn{font-size:.72rem;padding:.3rem .55rem}
+
+  .felt-suit{min-width:56px;padding:.3rem .45rem;border-radius:9px}
+  .felt-suit .fs-suit{font-size:1.15rem}
+  .saar{min-width:64px;padding:.3rem .4rem;border-radius:9px}
+  .saar-label{font-size:.5rem;letter-spacing:.12rem}
+  .saar-stack{width:38px;height:54px}
+  .saar-card{width:38px;height:54px}
+  .saar-count{font-size:.6rem}
+}
+
+@media(max-width:420px){
+  .brand{display:none}
+  .card{width:50px;height:72px}
+  .card .tl,.card .br{font-size:.72rem}
+  .card .pip{font-size:1.2rem}
+  .card.small{width:38px;height:54px}
+  .hand{height:104px;padding-top:26px}
+  .seat{width:60px}
+  .seats.many .seat{width:54px}
+}
+
 /* scrollbars */
 ::-webkit-scrollbar{width:8px;height:8px}
 ::-webkit-scrollbar-thumb{background:rgba(245,197,66,.3);border-radius:8px}

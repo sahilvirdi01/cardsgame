@@ -92,10 +92,19 @@
         </div>
       </div>
 
-      <div class="panel">
+      <div class="panel cam-panel">
         <div class="panel-head"><h2>Your Camera &amp; Mic</h2></div>
         <div id="lobbyVideoGrid" class="video-grid"></div>
         <p class="muted small">Optional — turn on your mic or camera so friends can hear/see you. Everything stays peer‑to‑peer.</p>
+      </div>
+
+      <div class="panel lobby-chat">
+        <div class="panel-head"><h2>Chat</h2><span class="pill">Lobby</span></div>
+        <div id="lobbyChatLog" class="chat-log"></div>
+        <form id="lobbyChatForm" class="chat-form">
+          <input id="lobbyChatInput" maxlength="200" placeholder="Say hi while you wait…" autocomplete="off">
+          <button class="btn btn-sm" type="submit">Send</button>
+        </form>
       </div>
     </div>
   </section>
@@ -250,17 +259,6 @@
       <li>The host can tweak <b>house rules</b> in the lobby: turn direction, when escapes count, and who leads after an escape.</li>
     </ul>
     <button id="howClose" class="btn btn-primary">Got it</button>
-  </div>
-</div>
-
-<div id="mobileOverlay" class="overlay hidden">
-  <div class="mobile-card">
-    <div class="mobile-emoji">💻</div>
-    <h2>Best on a laptop or desktop</h2>
-    <p class="muted">You're on a phone. For the best experience — a bigger table, easier card taps and smoother video — please open this game on a laptop or desktop computer.</p>
-    <div class="mobile-actions">
-      <button id="mobileContinue" class="btn btn-primary">Continue anyway</button>
-    </div>
   </div>
 </div>
 

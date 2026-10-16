@@ -31,7 +31,7 @@
     peer = {
       id: peerId,
       pc,
-      polite: WebRTC.selfId > peerId,   // higher socket id yields
+      polite: WebRTC.selfId > peerId,   // determines who yields on offer glare
       makingOffer: false,
       ignoreOffer: false,
       answerPending: false,
@@ -91,11 +91,21 @@
     peer.audioEl.play().catch(() => {});
   }
 
+  /** Autoplay policies block remote audio until a user gesture — retry on demand. */
+  WebRTC.resumeAudio = function () {
+    for (const peer of WebRTC.peers.values()) {
+      if (peer.audioEl) peer.audioEl.play().catch(() => {});
+    }
+  };
+
   function notify(peerId) { if (WebRTC.onUpdate) WebRTC.onUpdate(peerId); }
 
   WebRTC.init = function (socket) {
+    if (WebRTC._inited) return;
+    WebRTC._inited = true;
     WebRTC.socket = socket;
-    WebRTC.selfId = socket.id;
+    // NOTE: WebRTC.selfId must be the stable *player* id (set after join), not
+    // the transient socket id — the server relays signals by player id.
     socket.on('signal', async ({ from, data }) => {
       const peer = ensurePeer(from);
       const pc = peer.pc;
@@ -146,7 +156,8 @@
 
   WebRTC.setMic = async function (on) {
     if (on) {
-      const existing = WebRTC.localStream && WebRTC.localStream.getAudioTracks()[0];
+      const existing = WebRTC.localStream &&
+        WebRTC.localStream.getAudioTracks().find((t) => t.readyState === 'live');
       if (existing) { existing.enabled = true; }
       else {
         const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
@@ -166,7 +177,8 @@
 
   WebRTC.setCam = async function (on) {
     if (on) {
-      const existing = WebRTC.localStream && WebRTC.localStream.getVideoTracks()[0];
+      const existing = WebRTC.localStream &&
+        WebRTC.localStream.getVideoTracks().find((t) => t.readyState === 'live');
       if (existing) { existing.enabled = true; }
       else {
         const s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 480 }, height: { ideal: 360 } } });
