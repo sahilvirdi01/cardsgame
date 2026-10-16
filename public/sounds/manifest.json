@@ -23,5 +23,8 @@
   { "id": "hasde-chehre", "label": "Hasde chehre", "file": "/sounds/hasde%20chehre.mp3" },
   { "id": "jatt-aa-gya-toronto-ala", "label": "Jatt aa gya Toronto ala", "file": "/sounds/jatt%20aa%20gya%20toronto%20ala.mp3" },
   { "id": "kive-aa-singh", "label": "Kive aa singh", "file": "/sounds/kive%20aa%20singh.mp3" },
-  { "id": "o-janda-e", "label": "O Janda E", "file": "/sounds/o%20janda%20e.mp3" }
+  { "id": "o-janda-e", "label": "O Janda E", "file": "/sounds/o%20janda%20e.mp3" },
+  { "id": "card", "label": "Card", "file": "/sounds/card_play.wav", "hidden": true },
+  { "id": "shuffle", "label": "Shuffle", "file": "/sounds/card_shuffle.mp3", "hidden": true },
+  { "id": "deal", "label": "Deal", "file": "/sounds/card_dealt.mp3", "hidden": true }
 ]
