@@ -331,51 +331,6 @@
     if (WebRTC.onMicLevel) WebRTC.onMicLevel(0);
   };
 
-  /* ---------------- self-monitor: play your own mic back to you ---------------- */
-  let monitor = null;
-  WebRTC.startMonitor = function () {
-    if (monitor) return true;
-    const track = currentTrack('audio');
-    if (!track) return false;
-    try {
-      const AC = window.AudioContext || window.webkitAudioContext;
-      const ac = new AC();
-      const src = ac.createMediaStreamSource(new MediaStream([track]));
-      const gain = ac.createGain();
-      gain.gain.value = 1;
-      src.connect(gain);
-      gain.connect(ac.destination);
-      monitor = { ac, src, gain };
-      return true;
-    } catch (e) { monitor = null; return false; }
-  };
-  WebRTC.stopMonitor = function () {
-    if (!monitor) return;
-    try { monitor.src.disconnect(); monitor.gain.disconnect(); monitor.ac.close(); } catch (e) {}
-    monitor = null;
-  };
-  WebRTC.isMonitoring = function () { return !!monitor; };
-
-  /* ---------------- outbound audio stats (to prove whether we transmit) ---------------- */
-  WebRTC.getSendStats = async function () {
-    let bytes = 0, packets = 0, connected = 0;
-    for (const peer of WebRTC.peers.values()) {
-      const pc = peer.pc;
-      if (pc.connectionState === 'connected' ||
-          pc.iceConnectionState === 'connected' ||
-          pc.iceConnectionState === 'completed') connected++;
-      let report;
-      try { report = await pc.getStats(); } catch (e) { continue; }
-      report.forEach((s) => {
-        if (s.type === 'outbound-rtp' && s.kind === 'audio') {
-          bytes += s.bytesSent || 0;
-          packets += s.packetsSent || 0;
-        }
-      });
-    }
-    return { bytes, packets, connected, peers: WebRTC.peers.size };
-  };
-
   WebRTC.attachToVideo = function (videoEl, peerId) {
     if (peerId === 'self') {
       if (WebRTC.localStream) videoEl.srcObject = WebRTC.localStream;
@@ -392,7 +347,6 @@
 
   WebRTC.cleanup = function () {
     WebRTC.stopMicMeter();
-    WebRTC.stopMonitor();
     for (const id of [...WebRTC.peers.keys()]) WebRTC.removePeer(id);
     if (WebRTC.localStream) {
       WebRTC.localStream.getTracks().forEach((t) => t.stop());
