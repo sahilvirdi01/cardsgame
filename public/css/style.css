@@ -157,6 +157,11 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 .mic-field{margin-top:.7rem}
 .mic-meter{height:8px;border-radius:999px;background:#04110b;border:1px solid var(--border);overflow:hidden;margin-top:.35rem}
 .mic-meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3fae6a,var(--gold));transition:width .08s linear}
+.mic-diag{display:flex;align-items:center;flex-wrap:wrap;gap:.4rem;margin-top:.5rem}
+.mic-diag .pill{font-size:.72rem}
+.pill.ok{background:rgba(63,174,106,.18);border-color:rgba(63,174,106,.5);color:#7fe0a5}
+.pill.warn{background:rgba(220,80,80,.16);border-color:rgba(220,80,80,.5);color:#ff9d9d}
+.mic-diag .btn{margin-left:auto}
 
 /* ---------- game layout ---------- */
 .game-layout{flex:1;display:grid;grid-template-columns:320px 1fr;gap:.9rem;padding:.9rem;min-height:0}

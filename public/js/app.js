@@ -215,7 +215,12 @@
       toast(e && e.name === 'NotAllowedError' ? 'Microphone permission denied' : 'Could not start microphone', 'error');
       return;
     }
-    if (on) refreshMicList();
+    if (on) {
+      refreshMicList();
+    } else {
+      WebRTC.stopMonitor();
+      if ($('#micTestBtn')) $('#micTestBtn').classList.remove('on');
+    }
     updateMediaButtons();
     socket.emit('mediaState', { mic: WebRTC.media.mic, cam: WebRTC.media.cam });
     renderVideos();
@@ -261,10 +266,51 @@
     }
     refreshMicList();
   }
+  let micPeak = 0;
   WebRTC.onMicLevel = (level) => {
     const bar = $('#micLevel');
     if (bar) bar.style.width = Math.round(level * 100) + '%';
+    if (level > micPeak) micPeak = level;
   };
+  async function updateMicDiag() {
+    const capture = $('#micDiagCapture');
+    const send = $('#micDiagSend');
+    if (!capture || !send) return;
+    if (!WebRTC.media.mic) {
+      capture.textContent = 'Mic off'; capture.className = 'pill';
+      send.textContent = 'Not sending'; send.className = 'pill';
+      micPeak = 0;
+      return;
+    }
+    const captured = micPeak > 0.02;
+    capture.textContent = captured ? 'Capturing \u2713' : 'No sound detected';
+    capture.className = 'pill ' + (captured ? 'ok' : 'warn');
+    micPeak = 0;
+    const st = await WebRTC.getSendStats();
+    if (st.connected === 0) {
+      send.textContent = 'No peers connected'; send.className = 'pill';
+    } else if (st.packets > 0) {
+      send.textContent = `Sending \u2713 to ${st.connected}`; send.className = 'pill ok';
+    } else {
+      send.textContent = 'Not reaching peers'; send.className = 'pill warn';
+    }
+  }
+  setInterval(updateMicDiag, 1000);
+  if ($('#micTestBtn')) {
+    $('#micTestBtn').addEventListener('click', () => {
+      if (!WebRTC.media.mic) { toast('Turn on your mic first', 'error'); return; }
+      if (WebRTC.isMonitoring()) {
+        WebRTC.stopMonitor();
+        $('#micTestBtn').classList.remove('on');
+        toast('Mic test off');
+      } else if (WebRTC.startMonitor()) {
+        $('#micTestBtn').classList.add('on');
+        toast('Speak now \u2014 you should hear yourself (use headphones)');
+      } else {
+        toast('Could not start mic test', 'error');
+      }
+    });
+  }
 
   /* ---------------- video tiles ---------------- */
   const tiles = new Map(); // key -> {video, off, name, icons, tile}
