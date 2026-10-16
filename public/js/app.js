@@ -2,6 +2,7 @@
 (function () {
   const $ = (s) => document.querySelector(s);
   const $$ = (s) => [...document.querySelectorAll(s)];
+  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
   const socket = io();
   const APP = {
@@ -210,7 +211,11 @@
     Soundboard.unlock();
     const on = !WebRTC.media.mic;
     try { await WebRTC.setMic(on); }
-    catch (e) { toast('Microphone permission denied', 'error'); return; }
+    catch (e) {
+      toast(e && e.name === 'NotAllowedError' ? 'Microphone permission denied' : 'Could not start microphone', 'error');
+      return;
+    }
+    if (on) refreshMicList();
     updateMediaButtons();
     socket.emit('mediaState', { mic: WebRTC.media.mic, cam: WebRTC.media.cam });
     renderVideos();
@@ -232,6 +237,34 @@
   $('#lobbyMicBtn').addEventListener('click', toggleMic);
   $('#camBtn').addEventListener('click', toggleCam);
   $('#lobbyCamBtn').addEventListener('click', toggleCam);
+
+  /* ---- microphone device picker + live level meter ---- */
+  async function refreshMicList() {
+    const sel = $('#micSelect');
+    if (!sel) return;
+    const inputs = await WebRTC.listInputs();
+    const saved = WebRTC.micDeviceId || '';
+    sel.innerHTML = '<option value="">System default</option>' +
+      inputs.map((d, i) =>
+        `<option value="${d.deviceId}">${esc(d.label || `Microphone ${i + 1}`)}</option>`).join('');
+    sel.value = saved && inputs.some((d) => d.deviceId === saved) ? saved : '';
+  }
+  if ($('#micSelect')) {
+    $('#micSelect').addEventListener('change', async (e) => {
+      Soundboard.unlock();
+      await WebRTC.changeMic(e.target.value || null);
+      updateMediaButtons();
+      renderVideos();
+    });
+    if (navigator.mediaDevices && navigator.mediaDevices.addEventListener) {
+      navigator.mediaDevices.addEventListener('devicechange', refreshMicList);
+    }
+    refreshMicList();
+  }
+  WebRTC.onMicLevel = (level) => {
+    const bar = $('#micLevel');
+    if (bar) bar.style.width = Math.round(level * 100) + '%';
+  };
 
   /* ---------------- video tiles ---------------- */
   const tiles = new Map(); // key -> {video, off, name, icons, tile}
@@ -336,7 +369,6 @@
       input.value = '';
     });
   });
-  const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   socket.on('chat', ({ nickname, text }) => {
     addChat(`<b>${esc(nickname)}:</b> ${esc(text)}`);
   });

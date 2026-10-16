@@ -95,6 +95,13 @@
       <div class="panel cam-panel">
         <div class="panel-head"><h2>Your Camera &amp; Mic</h2></div>
         <div id="lobbyVideoGrid" class="video-grid"></div>
+        <label class="field mic-field">
+          <span>Microphone device</span>
+          <select id="micSelect"><option value="">System default</option></select>
+        </label>
+        <div class="mic-meter" title="Live input level — if this bar stays flat while you speak, the wrong mic is selected or it is muted">
+          <i id="micLevel"></i>
+        </div>
         <p class="muted small">Optional — turn on your mic or camera so friends can hear/see you. Everything stays peer‑to‑peer.</p>
       </div>
 

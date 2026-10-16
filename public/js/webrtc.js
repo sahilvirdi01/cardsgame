@@ -1,7 +1,13 @@
 'use strict';
 /* WebRTC peer-to-peer mesh for optional mic + camera.
- * Signalling rides on the existing Socket.IO connection. Uses the
- * "perfect negotiation" pattern so glare is handled automatically. */
+ *
+ * Signalling rides on the existing Socket.IO connection and uses the
+ * "perfect negotiation" pattern so glare is handled automatically.
+ *
+ * Audio and video transceivers are created up-front (sendrecv) and media is
+ * attached with replaceTrack(). That means turning the mic/camera on or off
+ * never triggers a fresh offer/answer round-trip, which removes a whole class
+ * of race conditions that used to leave one side sending no media at all. */
 (function () {
   const RTC_CONFIG = {
     iceServers: [
@@ -16,13 +22,28 @@
     localStream: null,
     peers: new Map(),     // peerId -> peer object
     media: { mic: false, cam: false },
+    micDeviceId: safeGet('bhabhi:mic'),
+    camDeviceId: safeGet('bhabhi:cam'),
     onUpdate: null,       // (peerId) => void
-    onLocalChange: null,
+    onLocalChange: null,  // (media) => void
+    onMicLevel: null,     // (0..1) => void
   };
 
-  function newStream() {
-    try { return new MediaStream(); } catch (e) { return null; }
+  function safeGet(k) { try { return localStorage.getItem(k) || null; } catch (e) { return null; } }
+  function safeSet(k, v) { try { if (v) localStorage.setItem(k, v); else localStorage.removeItem(k); } catch (e) {} }
+
+  function currentTrack(kind) {
+    if (!WebRTC.localStream) return null;
+    const list = kind === 'audio' ? WebRTC.localStream.getAudioTracks() : WebRTC.localStream.getVideoTracks();
+    return list.find((t) => t.readyState === 'live') || null;
   }
+
+  function localStream() {
+    if (!WebRTC.localStream) WebRTC.localStream = new MediaStream();
+    return WebRTC.localStream;
+  }
+
+  function notify(peerId) { if (WebRTC.onUpdate) WebRTC.onUpdate(peerId); }
 
   function ensurePeer(peerId) {
     let peer = WebRTC.peers.get(peerId);
@@ -31,16 +52,25 @@
     peer = {
       id: peerId,
       pc,
-      polite: WebRTC.selfId > peerId,   // determines who yields on offer glare
+      polite: String(WebRTC.selfId || '') > peerId, // who yields on offer glare
       makingOffer: false,
       ignoreOffer: false,
-      answerPending: false,
-      stream: newStream(),
+      isSettingRemoteAnswerPending: false,
+      stream: new MediaStream(),   // remote tracks, assembled locally
       audioEl: null,
       mic: false,
       cam: false,
+      // Reserve the m-lines now so toggling media later needs no renegotiation.
+      audioTx: pc.addTransceiver('audio', { direction: 'sendrecv' }),
+      videoTx: pc.addTransceiver('video', { direction: 'sendrecv' }),
     };
     WebRTC.peers.set(peerId, peer);
+
+    // Attach whatever media we already have.
+    const a = currentTrack('audio');
+    const v = currentTrack('video');
+    if (a) peer.audioTx.sender.replaceTrack(a).catch(() => {});
+    if (v) peer.videoTx.sender.replaceTrack(v).catch(() => {});
 
     pc.onnegotiationneeded = async () => {
       try {
@@ -56,35 +86,29 @@
     };
 
     pc.ontrack = (ev) => {
-      const { track, streams } = ev;
-      if (streams && streams[0] && peer.stream !== streams[0]) {
-        peer.stream = streams[0];
-      } else if (!peer.stream) {
-        peer.stream = newStream();
-        peer.stream.addTrack(track);
-      }
-      track.onunmute = () => notify(peerId);
+      const track = ev.track;
+      if (!peer.stream.getTracks().includes(track)) peer.stream.addTrack(track);
+      track.onmute = () => notify(peerId);
+      track.onunmute = () => { attachAudioSink(peerId); notify(peerId); };
+      track.onended = () => notify(peerId);
       attachAudioSink(peerId);
       notify(peerId);
     };
 
     pc.onconnectionstatechange = () => notify(peerId);
-
-    if (WebRTC.localStream) {
-      WebRTC.localStream.getTracks().forEach((t) => pc.addTrack(t, WebRTC.localStream));
-    }
     return peer;
   }
 
   function attachAudioSink(peerId) {
     const peer = WebRTC.peers.get(peerId);
-    if (!peer) return;
-    if (!peer.stream) return;
+    if (!peer || !peer.stream) return;
     if (!peer.audioEl) {
       const el = document.createElement('audio');
       el.autoplay = true;
       el.playsInline = true;
-      document.getElementById('audioSink').appendChild(el);
+      const sink = document.getElementById('audioSink');
+      if (sink) sink.appendChild(el);
+      else document.body.appendChild(el);
       peer.audioEl = el;
     }
     if (peer.audioEl.srcObject !== peer.stream) peer.audioEl.srcObject = peer.stream;
@@ -98,8 +122,6 @@
     }
   };
 
-  function notify(peerId) { if (WebRTC.onUpdate) WebRTC.onUpdate(peerId); }
-
   WebRTC.init = function (socket) {
     if (WebRTC._inited) return;
     WebRTC._inited = true;
@@ -111,15 +133,16 @@
       const pc = peer.pc;
       try {
         if (data.description) {
+          const desc = data.description;
           const readyForOffer = !peer.makingOffer &&
-            (pc.signalingState === 'stable' || peer.answerPending);
-          const offerCollision = data.description.type === 'offer' && !readyForOffer;
+            (pc.signalingState === 'stable' || peer.isSettingRemoteAnswerPending);
+          const offerCollision = desc.type === 'offer' && !readyForOffer;
           peer.ignoreOffer = !peer.polite && offerCollision;
           if (peer.ignoreOffer) return;
-          peer.answerPending = data.description.type === 'answer';
-          await pc.setRemoteDescription(data.description);
-          peer.answerPending = false;
-          if (data.description.type === 'offer') {
+          peer.isSettingRemoteAnswerPending = desc.type === 'answer';
+          await pc.setRemoteDescription(desc); // implicit rollback for the polite peer
+          peer.isSettingRemoteAnswerPending = false;
+          if (desc.type === 'offer') {
             await pc.setLocalDescription();
             socket.emit('signal', { to: from, data: { description: pc.localDescription } });
           }
@@ -148,52 +171,164 @@
     notify(peerId);
   };
 
-  function addTrackToAll(track) {
+  async function pushTrack(kind, track) {
     for (const peer of WebRTC.peers.values()) {
-      try { peer.pc.addTrack(track, WebRTC.localStream); } catch (e) {}
+      const sender = kind === 'audio' ? peer.audioTx.sender : peer.videoTx.sender;
+      try { await sender.replaceTrack(track); } catch (e) { /* ignore */ }
     }
   }
 
-  WebRTC.setMic = async function (on) {
-    if (on) {
-      const existing = WebRTC.localStream &&
-        WebRTC.localStream.getAudioTracks().find((t) => t.readyState === 'live');
-      if (existing) { existing.enabled = true; }
-      else {
-        const s = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
-        const track = s.getAudioTracks()[0];
-        if (!WebRTC.localStream) WebRTC.localStream = newStream();
-        WebRTC.localStream.addTrack(track);
-        addTrackToAll(track);
+  async function getUserMedia(kind, deviceId) {
+    const md = navigator.mediaDevices;
+    const withDevice = (base) => (deviceId ? Object.assign({ deviceId: { exact: deviceId } }, base) : base);
+    try {
+      if (kind === 'audio') {
+        return await md.getUserMedia({
+          audio: withDevice({ echoCancellation: true, noiseSuppression: true, autoGainControl: true }),
+        });
       }
+      return await md.getUserMedia({
+        video: withDevice({ width: { ideal: 480 }, height: { ideal: 360 } }),
+      });
+    } catch (e) {
+      // Some microphones/drivers reject the processing constraints — retry with
+      // the simplest possible request before giving up.
+      if (kind === 'audio') {
+        return await md.getUserMedia({ audio: deviceId ? { deviceId: { exact: deviceId } } : true });
+      }
+      return await md.getUserMedia({ video: deviceId ? { deviceId: { exact: deviceId } } : true });
+    }
+  }
+
+  WebRTC.setMic = async function (on, deviceId) {
+    if (deviceId !== undefined) {
+      WebRTC.micDeviceId = deviceId || null;
+      safeSet('bhabhi:mic', WebRTC.micDeviceId);
+    }
+    if (on) {
+      let track = currentTrack('audio');
+      if (!track) {
+        let stream;
+        try {
+          stream = await getUserMedia('audio', WebRTC.micDeviceId);
+        } catch (e) {
+          if (WebRTC.micDeviceId) {
+            // Saved device may be gone — retry with the system default.
+            WebRTC.micDeviceId = null;
+            safeSet('bhabhi:mic', null);
+            stream = await getUserMedia('audio', null);
+          } else {
+            throw e;
+          }
+        }
+        track = stream.getAudioTracks()[0];
+        localStream().addTrack(track);
+        track.onended = () => { WebRTC.media.mic = false; pushTrack('audio', null); WebRTC.stopMicMeter(); if (WebRTC.onLocalChange) WebRTC.onLocalChange(WebRTC.media); };
+      }
+      track.enabled = true;
+      await pushTrack('audio', track);
       WebRTC.media.mic = true;
+      WebRTC.startMicMeter();
     } else {
-      const t = WebRTC.localStream && WebRTC.localStream.getAudioTracks()[0];
+      const t = currentTrack('audio');
       if (t) t.enabled = false;
+      await pushTrack('audio', null);
       WebRTC.media.mic = false;
+      WebRTC.stopMicMeter();
     }
     if (WebRTC.onLocalChange) WebRTC.onLocalChange(WebRTC.media);
   };
 
-  WebRTC.setCam = async function (on) {
+  WebRTC.setCam = async function (on, deviceId) {
+    if (deviceId !== undefined) {
+      WebRTC.camDeviceId = deviceId || null;
+      safeSet('bhabhi:cam', WebRTC.camDeviceId);
+    }
     if (on) {
-      const existing = WebRTC.localStream &&
-        WebRTC.localStream.getVideoTracks().find((t) => t.readyState === 'live');
-      if (existing) { existing.enabled = true; }
-      else {
-        const s = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 480 }, height: { ideal: 360 } } });
-        const track = s.getVideoTracks()[0];
-        if (!WebRTC.localStream) WebRTC.localStream = newStream();
-        WebRTC.localStream.addTrack(track);
-        addTrackToAll(track);
+      let track = currentTrack('video');
+      if (!track) {
+        let stream;
+        try {
+          stream = await getUserMedia('video', WebRTC.camDeviceId);
+        } catch (e) {
+          if (WebRTC.camDeviceId) {
+            WebRTC.camDeviceId = null;
+            safeSet('bhabhi:cam', null);
+            stream = await getUserMedia('video', null);
+          } else {
+            throw e;
+          }
+        }
+        track = stream.getVideoTracks()[0];
+        localStream().addTrack(track);
       }
+      track.enabled = true;
+      await pushTrack('video', track);
       WebRTC.media.cam = true;
     } else {
-      const t = WebRTC.localStream && WebRTC.localStream.getVideoTracks()[0];
+      const t = currentTrack('video');
       if (t) t.enabled = false;
+      await pushTrack('video', null);
       WebRTC.media.cam = false;
     }
     if (WebRTC.onLocalChange) WebRTC.onLocalChange(WebRTC.media);
+  };
+
+  /** Switch the active microphone (used by the device picker). */
+  WebRTC.changeMic = async function (deviceId) {
+    const wasOn = WebRTC.media.mic;
+    if (WebRTC.localStream) {
+      WebRTC.localStream.getAudioTracks().forEach((t) => {
+        t.onended = null;
+        t.stop();
+        WebRTC.localStream.removeTrack(t);
+      });
+    }
+    WebRTC.stopMicMeter();
+    WebRTC.micDeviceId = deviceId || null;
+    safeSet('bhabhi:mic', WebRTC.micDeviceId);
+    if (wasOn) await WebRTC.setMic(true, WebRTC.micDeviceId);
+  };
+
+  WebRTC.listInputs = async function () {
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      return devices.filter((d) => d.kind === 'audioinput');
+    } catch (e) { return []; }
+  };
+
+  /* ---------------- microphone level meter (for self-diagnosis) ---------------- */
+  let meter = null;
+  WebRTC.startMicMeter = async function () {
+    if (meter) return;
+    const track = currentTrack('audio');
+    if (!track) return;
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      const ac = new AC();
+      const src = ac.createMediaStreamSource(new MediaStream([track]));
+      const analyser = ac.createAnalyser();
+      analyser.fftSize = 512;
+      src.connect(analyser);
+      const data = new Uint8Array(analyser.frequencyBinCount);
+      meter = { ac, src, analyser, data, raf: 0 };
+      const tick = () => {
+        meter.analyser.getByteFrequencyData(meter.data);
+        let sum = 0;
+        for (let i = 0; i < meter.data.length; i++) sum += meter.data[i];
+        const level = Math.min(1, (sum / meter.data.length) / 60);
+        if (WebRTC.onMicLevel) WebRTC.onMicLevel(level);
+        meter.raf = requestAnimationFrame(tick);
+      };
+      tick();
+    } catch (e) { meter = null; }
+  };
+  WebRTC.stopMicMeter = function () {
+    if (!meter) return;
+    cancelAnimationFrame(meter.raf);
+    try { meter.src.disconnect(); meter.ac.close(); } catch (e) {}
+    meter = null;
+    if (WebRTC.onMicLevel) WebRTC.onMicLevel(0);
   };
 
   WebRTC.attachToVideo = function (videoEl, peerId) {
@@ -211,6 +346,7 @@
   };
 
   WebRTC.cleanup = function () {
+    WebRTC.stopMicMeter();
     for (const id of [...WebRTC.peers.keys()]) WebRTC.removePeer(id);
     if (WebRTC.localStream) {
       WebRTC.localStream.getTracks().forEach((t) => t.stop());
