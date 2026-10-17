@@ -164,13 +164,27 @@
         ? '<span class="host-tag away-tag">AWAY</span>'
         : (offline ? '<span class="host-tag away-tag">RECONNECTING…</span>' : '');
       li.innerHTML =
-        `<span class="avatar">${initial}</span>` +
+        `<span class="avatar"></span>` +
         `<span class="nm">${p.nickname}${p.id === APP.selfId ? ' (you)' : ''}</span>` +
         `<span class="medias">${p.mic ? '🎤' : ''}${p.cam ? '📷' : ''}</span>` +
         status +
         (p.isHost ? '<span class="host-tag">HOST</span>' : '');
       ul.appendChild(li);
+      const isYou = p.id === APP.selfId;
+      updateFace(faceFor(li.querySelector('.avatar'), 'lobby:' + p.id), {
+        initial,
+        stream: streamFor(p.id, isYou),
+        cam: p.cam, mic: p.mic,
+        vizKey: isYou ? 'self' : p.id,
+        isYou,
+      });
     });
+
+    // Drop face records for players who are no longer in the room.
+    const present = new Set(l.players.map((p) => 'lobby:' + p.id));
+    for (const key of [...FACES.keys()]) {
+      if (key.startsWith('lobby:') && !present.has(key)) dropFace(key);
+    }
 
     APP.isHost = l.hostId === APP.selfId;
     const canStart = APP.isHost && l.players.length >= 2;
@@ -279,7 +293,6 @@
       views.unshift({ id: 'self', nickname: 'You', mic: WebRTC.media.mic, cam: WebRTC.media.cam, connected: true, away: false, isYou: true });
     }
     renderGrid($('#lobbyVideoGrid'), 'lobby', views);
-    renderGrid($('#sideVideoGrid'), 'side', views);
   }
 
   function renderGrid(container, prefix, views) {
@@ -327,8 +340,202 @@
     }
   }
 
-  WebRTC.onUpdate = () => { if (APP.screen === 'game' || APP.screen === 'lobby') renderVideos(); };
-  WebRTC.onLocalChange = () => { updateMediaButtons(); renderVideos(); };
+  /* ---------------- live faces: circular camera + voice spectrum ----------------
+   * Each player's avatar (game seat + lobby list) turns into their live camera
+   * feed once they enable it, and a radial audio spectrum is drawn around it
+   * from their microphone so it's obvious who is speaking. */
+  const FACES = new Map(); // key ('seat:<id>' | 'lobby:<id>') -> face record
+
+  function streamFor(id, isYou) {
+    if (isYou || id === 'self' || id === APP.selfId) return WebRTC.localStream;
+    const peer = WebRTC.peers.get(id);
+    return peer ? peer.stream : null;
+  }
+  function hasLiveVideo(stream) {
+    return !!(stream && stream.getVideoTracks().some((t) => t.readyState === 'live'));
+  }
+  function mediaFor(id) {
+    if (id === APP.selfId) return { mic: WebRTC.media.mic, cam: WebRTC.media.cam };
+    const p = ((APP.lobby && APP.lobby.players) || []).find((x) => x.id === id);
+    return { mic: !!(p && p.mic), cam: !!(p && p.cam) };
+  }
+
+  function faceFor(root, key) {
+    let f = FACES.get(key);
+    if (!f) {
+      const wrap = document.createElement('div');
+      wrap.className = 'face';
+      wrap.innerHTML =
+        '<video class="face-video" autoplay playsinline muted></video>' +
+        '<span class="face-initial"></span>' +
+        '<canvas class="face-wave" width="160" height="160"></canvas>';
+      const canvas = wrap.querySelector('.face-wave');
+      f = {
+        key, wrap,
+        video: wrap.querySelector('.face-video'),
+        initial: wrap.querySelector('.face-initial'),
+        canvas,
+        ctx: canvas.getContext('2d'),
+        root: null, mic: false, cam: false, vizKey: null, talking: false,
+      };
+      FACES.set(key, f);
+    }
+    if (root && (f.root !== root || !root.contains(f.wrap))) {
+      root.appendChild(f.wrap);
+      f.root = root;
+    }
+    return f;
+  }
+
+  function updateFace(f, opts) {
+    if (!f) return;
+    const stream = opts.stream;
+    const live = !!opts.cam && hasLiveVideo(stream);
+    f.mic = !!opts.mic;
+    if (!f.mic) f.bars = null; // restart the spectrum cleanly next time mic is on
+    f.cam = live;
+    f.vizKey = opts.vizKey || null;
+    f.initial.textContent = opts.initial || '?';
+    if (live) {
+      if (f.video.srcObject !== stream) f.video.srcObject = stream;
+      // Re-attaching a moved <video> can pause it — always nudge playback.
+      f.video.play().catch(() => {});
+    } else if (f.video.srcObject) {
+      f.video.srcObject = null;
+    }
+    f.wrap.classList.toggle('cam-on', live);
+    f.wrap.classList.toggle('mic-on', !!opts.mic);
+    f.wrap.classList.toggle('is-you', !!opts.isYou);
+    if (f.root) {
+      f.root.classList.toggle('cam-on', live);
+      f.root.classList.toggle('mic-on', !!opts.mic);
+    }
+  }
+
+  function dropFace(key) {
+    const f = FACES.get(key);
+    if (!f) return;
+    f.wrap.remove();
+    FACES.delete(key);
+  }
+
+  /** Update every visible face from the current media state (no DOM rebuild). */
+  function refreshFaces() {
+    const list = (APP.lobby && APP.lobby.players) || [];
+    list.forEach((p) => {
+      const isYou = p.id === APP.selfId;
+      const media = mediaFor(p.id);
+      updateFace(FACES.get('lobby:' + p.id), {
+        initial: (p.nickname || '?').slice(0, 1).toUpperCase(),
+        stream: streamFor(p.id, isYou),
+        cam: media.cam, mic: media.mic,
+        vizKey: isYou ? 'self' : p.id, isYou,
+      });
+    });
+    if (APP.lastView) {
+      const players = [...APP.lastView.players].sort((a, b) => a.seat - b.seat);
+      players.forEach((p) => {
+        const rec = seatEls.get(p.id);
+        if (!rec) return;
+        const isYou = p.id === APP.lastView.you.id;
+        const media = mediaFor(p.id);
+        updateFace(FACES.get('seat:' + p.id), {
+          initial: (p.nickname || '?').slice(0, 1).toUpperCase(),
+          stream: streamFor(p.id, isYou),
+          cam: media.cam, mic: media.mic,
+          vizKey: isYou ? 'self' : p.id, isYou,
+        });
+      });
+    }
+  }
+
+  // Radial spectrum geometry. Radius is in the canvas' 160px coordinate space
+  // and lines up with the avatar's edge once the canvas is scaled to 180%.
+  const VOICE_BARS = 56;
+  const VOICE_BASE = 44;
+  const VOICE_MAX = 27;
+
+  function drawFaces() {
+    requestAnimationFrame(drawFaces);
+    for (const f of FACES.values()) {
+      const ctx = f.ctx;
+      const size = f.canvas.width;
+      ctx.clearRect(0, 0, size, size);
+      if (!f.mic || !f.vizKey) continue;
+      const data = WebRTC.frequencyFor(f.vizKey);
+      if (!data) continue;
+
+      if (!f.bars || f.bars.length !== VOICE_BARS) f.bars = new Float32Array(VOICE_BARS);
+      const bins = data.length;
+      const cx = size / 2, cy = size / 2;
+
+      // Per-bar smoothing: snap up on attack, ease down on release so the ring
+      // flows with the voice instead of flickering frame to frame.
+      let rms = 0;
+      for (let i = 0; i < VOICE_BARS; i++) {
+        const t = i / VOICE_BARS;
+        // Slight power curve spreads the low voice band across more bars.
+        const idx = Math.min(bins - 1, Math.floor(Math.pow(t, 1.25) * bins * 0.72));
+        const target = Math.pow(data[idx] / 255, 0.75);
+        const cur = f.bars[i];
+        f.bars[i] = target > cur ? cur + (target - cur) * 0.55 : cur + (target - cur) * 0.16;
+        rms += f.bars[i];
+      }
+      rms /= VOICE_BARS;
+      const talking = rms > 0.12;
+      if (f.talking !== talking) {
+        f.talking = talking;
+        f.wrap.classList.toggle('talking', talking);
+      }
+
+      ctx.save();
+      ctx.translate(cx, cy);
+      // Whole ring breathes gently with the overall loudness.
+      ctx.scale(1 + rms * 0.07, 1 + rms * 0.07);
+
+      // Idle ring keeps the visualiser feeling like a complete halo even in
+      // the silent gaps between words.
+      ctx.beginPath();
+      ctx.arc(0, 0, VOICE_BASE, 0, Math.PI * 2);
+      ctx.strokeStyle = `hsla(48, 85%, 62%, ${0.16 + rms * 0.28})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      ctx.lineCap = 'round';
+      ctx.shadowColor = 'hsla(48, 92%, 60%, 0.9)';
+      ctx.shadowBlur = 3 + rms * 16;
+
+      for (let i = 0; i < VOICE_BARS; i++) {
+        const v = f.bars[i];
+        const len = 2.5 + v * VOICE_MAX;
+        const a = (i / VOICE_BARS) * Math.PI * 2 - Math.PI / 2;
+        const ca = Math.cos(a), sa = Math.sin(a);
+        const x1 = ca * (VOICE_BASE + len), y1 = sa * (VOICE_BASE + len);
+        const hue = 148 - v * 112;
+        ctx.beginPath();
+        ctx.lineWidth = 2.6 + v * 0.9;
+        ctx.strokeStyle = `hsla(${hue}, 92%, ${52 + v * 16}%, ${0.35 + v * 0.65})`;
+        ctx.moveTo(ca * VOICE_BASE, sa * VOICE_BASE);
+        ctx.lineTo(x1, y1);
+        ctx.stroke();
+        // Bright rounded tip makes louder bars feel alive.
+        if (v > 0.16) {
+          ctx.beginPath();
+          ctx.fillStyle = `hsla(${hue}, 95%, ${70 + v * 16}%, ${0.5 + v * 0.5})`;
+          ctx.arc(x1, y1, 0.9 + v * 1.8, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.restore();
+    }
+  }
+  requestAnimationFrame(drawFaces);
+
+  WebRTC.onUpdate = () => {
+    if (APP.screen === 'game') { renderVideos(); refreshFaces(); }
+    else if (APP.screen === 'lobby') refreshFaces();
+  };
+  WebRTC.onLocalChange = () => { updateMediaButtons(); renderVideos(); refreshFaces(); };
 
   /* ---------------- soundboard ---------------- */
   function playSound(id) {
@@ -530,12 +737,14 @@
       const p = APP.lobby.players.find((x) => x.id === id);
       if (p) { p.mic = mic; p.cam = cam; }
       renderVideos();
+      refreshFaces();
     }
   });
   socket.on('peerLeft', ({ id }) => {
     WebRTC.removePeer(id);
     if (APP.lobby) APP.lobby.players = APP.lobby.players.filter((p) => p.id !== id);
     renderVideos();
+    refreshFaces();
     addChat(`${playerName(id)} left the room.`, 'sys');
   });
 
@@ -630,31 +839,68 @@
     for (const ev of events) handleEvent(ev, view, players);
   }
 
+  const seatEls = new Map(); // playerId -> cached seat DOM record
+
   function renderSeats(view, players) {
     const seatsEl = $('#seats');
     const pos = seatPositions(players, view.you.id);
-    seatsEl.innerHTML = '';
     seatsEl.classList.toggle('many', players.length > 4);
+    const seen = new Set();
     players.forEach((p) => {
+      seen.add(p.id);
       const isYou = p.id === view.you.id;
-      const el = document.createElement('div');
-      el.className = 'seat' + (p.id === view.turnId ? ' turn' : '') +
+      let rec = seatEls.get(p.id);
+      if (!rec) {
+        const el = document.createElement('div');
+        el.className = 'seat';
+        el.dataset.playerId = p.id;
+        el.innerHTML =
+          '<div class="seat-avatar"></div>' +
+          '<div class="seat-name"></div>' +
+          '<div class="seat-role"></div>' +
+          '<div class="seat-count"></div>' +
+          '<div class="seat-bar"></div>';
+        seatsEl.appendChild(el);
+        rec = {
+          el,
+          avatar: el.querySelector('.seat-avatar'),
+          name: el.querySelector('.seat-name'),
+          role: el.querySelector('.seat-role'),
+          count: el.querySelector('.seat-count'),
+          bar: el.querySelector('.seat-bar'),
+          segs: -1,
+        };
+        seatEls.set(p.id, rec);
+      }
+      rec.el.className = 'seat' + (p.id === view.turnId ? ' turn' : '') +
         (p.out ? ' out' : '') + (isYou ? ' you' : '');
-      el.dataset.playerId = p.id;
-      el.style.left = pos[p.id].left + '%';
-      el.style.top = pos[p.id].top + '%';
-      const initial = (p.nickname || '?').slice(0, 1).toUpperCase();
-      let segs = '';
-      for (let i = 0; i < Math.min(p.handCount, 20); i++) segs += '<i></i>';
+      rec.el.style.left = pos[p.id].left + '%';
+      rec.el.style.top = pos[p.id].top + '%';
+      rec.name.textContent = isYou ? 'You' : p.nickname;
       const role = p.out ? 'Out' : (p.id === view.turnId ? (isYou ? 'Your turn' : 'Playing') : '');
-      el.innerHTML =
-        `<div class="seat-avatar">${initial}</div>` +
-        `<div class="seat-name">${isYou ? 'You' : p.nickname}</div>` +
-        `<div class="seat-role">${role}</div>` +
-        `<div class="seat-count">${p.handCount} card${p.handCount === 1 ? '' : 's'}</div>` +
-        `<div class="seat-bar">${segs}</div>`;
-      seatsEl.appendChild(el);
+      rec.role.textContent = role;
+      rec.count.textContent = `${p.handCount} card${p.handCount === 1 ? '' : 's'}`;
+      const segs = Math.min(p.handCount, 20);
+      if (rec.segs !== segs) {
+        rec.bar.innerHTML = new Array(segs).fill('<i></i>').join('');
+        rec.segs = segs;
+      }
+      const media = mediaFor(p.id);
+      updateFace(faceFor(rec.avatar, 'seat:' + p.id), {
+        initial: (p.nickname || '?').slice(0, 1).toUpperCase(),
+        stream: streamFor(p.id, isYou),
+        cam: media.cam, mic: media.mic,
+        vizKey: isYou ? 'self' : p.id,
+        isYou,
+      });
     });
+    for (const [id, rec] of [...seatEls]) {
+      if (!seen.has(id)) {
+        rec.el.remove();
+        seatEls.delete(id);
+        dropFace('seat:' + id);
+      }
+    }
   }
 
   function renderStats(view, players) {

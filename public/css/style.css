@@ -158,6 +158,21 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
 .mic-meter{height:8px;border-radius:999px;background:#04110b;border:1px solid var(--border);overflow:hidden;margin-top:.35rem}
 .mic-meter i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3fae6a,var(--gold));transition:width .08s linear}
 
+/* ---------- live faces (camera feed + voice spectrum on avatars) ---------- */
+.avatar,.seat-avatar{position:relative;overflow:visible}
+.face{position:absolute;inset:0;display:grid;place-items:center;pointer-events:none}
+.face-initial{line-height:1;transition:opacity .2s}
+.face-video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;border-radius:50%;
+  opacity:0;transition:opacity .25s;background:#04110b}
+.face.is-you .face-video{transform:scaleX(-1)}
+.face.cam-on .face-video{opacity:1}
+.face.cam-on .face-initial{opacity:0}
+.face-wave{position:absolute;width:180%;height:180%;left:-40%;top:-40%;pointer-events:none}
+.face.talking .face-video{box-shadow:0 0 0 2px var(--gold),0 0 16px rgba(245,197,66,.6)}
+.avatar.cam-on{width:52px;height:52px;border-color:var(--gold)}
+.seat-avatar.cam-on{width:76px;height:76px;border-color:var(--gold)}
+.seats.many .seat-avatar.cam-on{width:62px;height:62px}
+
 /* ---------- game layout ---------- */
 .game-layout{flex:1;display:grid;grid-template-columns:320px 1fr;gap:.9rem;padding:.9rem;min-height:0}
 @media(max-width:960px){
@@ -537,6 +552,9 @@ input:focus{border-color:var(--gold);box-shadow:0 0 0 3px rgba(245,197,66,.15)}
   .seats.many .seat{width:60px}
   .seat-avatar{width:32px;height:32px;font-size:.86rem}
   .seats.many .seat-avatar{width:26px;height:26px;font-size:.74rem}
+  .avatar.cam-on{width:44px;height:44px}
+  .seat-avatar.cam-on{width:58px;height:58px}
+  .seats.many .seat-avatar.cam-on{width:48px;height:48px}
   .seat-name{font-size:.6rem;max-width:68px;padding:.05rem .35rem}
   .seats.many .seat-name{font-size:.56rem;max-width:60px}
   .seat-role{font-size:.5rem;min-height:.7rem}

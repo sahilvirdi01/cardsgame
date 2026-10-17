@@ -89,9 +89,10 @@
       const track = ev.track;
       if (!peer.stream.getTracks().includes(track)) peer.stream.addTrack(track);
       track.onmute = () => notify(peerId);
-      track.onunmute = () => { attachAudioSink(peerId); notify(peerId); };
+      track.onunmute = () => { attachAudioSink(peerId); attachViz(peerId, peer.stream); notify(peerId); };
       track.onended = () => notify(peerId);
       attachAudioSink(peerId);
+      if (track.kind === 'audio') attachViz(peerId, peer.stream);
       notify(peerId);
     };
 
@@ -117,6 +118,7 @@
 
   /** Autoplay policies block remote audio until a user gesture — retry on demand. */
   WebRTC.resumeAudio = function () {
+    if (viz.ac && viz.ac.state === 'suspended') viz.ac.resume().catch(() => {});
     for (const peer of WebRTC.peers.values()) {
       if (peer.audioEl) peer.audioEl.play().catch(() => {});
     }
@@ -167,6 +169,7 @@
     if (!peer) return;
     try { peer.pc.close(); } catch (e) {}
     if (peer.audioEl) peer.audioEl.remove();
+    detachViz(peerId);
     WebRTC.peers.delete(peerId);
     notify(peerId);
   };
@@ -300,6 +303,7 @@
   /* ---------------- microphone level meter (for self-diagnosis) ---------------- */
   let meter = null;
   WebRTC.startMicMeter = async function () {
+    if (WebRTC.localStream) attachViz('self', WebRTC.localStream);
     if (meter) return;
     const track = currentTrack('audio');
     if (!track) return;
@@ -324,11 +328,63 @@
     } catch (e) { meter = null; }
   };
   WebRTC.stopMicMeter = function () {
+    detachViz('self');
     if (!meter) return;
     cancelAnimationFrame(meter.raf);
     try { meter.src.disconnect(); meter.ac.close(); } catch (e) {}
     meter = null;
     if (WebRTC.onMicLevel) WebRTC.onMicLevel(0);
+  };
+
+  /* ---------------- voice visualizer (radial spectrum) ----------------
+   * A shared AudioContext drives one analyser per audio source (local mic and
+   * each remote peer). Browsers block an AudioContext created without a user
+   * gesture, so `resumeAudio()` (called on any pointerdown) also resumes it. */
+  const viz = { ac: null };
+  const vizNodes = new Map(); // key ('self' | peerId) -> { src, analyser, data, stream }
+
+  function vizContext() {
+    if (viz.ac) return viz.ac;
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try { viz.ac = new AC(); } catch (e) { viz.ac = null; }
+    return viz.ac;
+  }
+
+  function attachViz(key, stream) {
+    if (!stream || !stream.getAudioTracks().length) return;
+    const existing = vizNodes.get(key);
+    if (existing && existing.stream === stream) return;
+    const ac = vizContext();
+    if (!ac) return;
+    if (existing) { try { existing.src.disconnect(); } catch (e) {} vizNodes.delete(key); }
+    try {
+      const src = ac.createMediaStreamSource(stream);
+      const analyser = ac.createAnalyser();
+      analyser.fftSize = 256;
+      analyser.smoothingTimeConstant = 0.78;
+      src.connect(analyser);
+      vizNodes.set(key, {
+        src, analyser, stream,
+        data: new Uint8Array(analyser.frequencyBinCount),
+      });
+      if (ac.state === 'suspended') ac.resume().catch(() => {});
+    } catch (e) { /* source may be unavailable mid-negotiation */ }
+  }
+
+  function detachViz(key) {
+    const n = vizNodes.get(key);
+    if (!n) return;
+    try { n.src.disconnect(); } catch (e) {}
+    vizNodes.delete(key);
+  }
+
+  /** Latest frequency-domain bytes (0..255 per bin) for a source, or null. */
+  WebRTC.frequencyFor = function (key) {
+    const n = vizNodes.get(key);
+    if (!n) return null;
+    n.analyser.getByteFrequencyData(n.data);
+    return n.data;
   };
 
   WebRTC.attachToVideo = function (videoEl, peerId) {
