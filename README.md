@@ -112,8 +112,9 @@ refresh the browser. Labels default to the filename (e.g. `thulla-time.gif` beco
 
 To set custom labels or control order, optionally add a `manifest.json` in the
 relevant folder — it only overrides label/order for files that exist; missing entries
-are ignored and unlisted files are still included. Note: `npm run gen:gifs` only
-regenerates placeholder art into `public/gifs/` and never touches `manifest.json`.
+are ignored and unlisted files are still included. Note: `npm run gen:gifs`
+regenerates placeholder art into both `public/gifs/` and `public/gifs/bhabhi/`,
+and never touches `manifest.json`.
 
 ## Deployment
 

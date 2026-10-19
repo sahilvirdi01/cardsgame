@@ -13,7 +13,6 @@
     lobby: null,
     lastView: null,
     ready: false,
-    sittingOut: false,
   };
 
   // Wire the WebRTC signalling layer to the socket. Without this no offers,
@@ -63,8 +62,6 @@
     return p ? p.nickname : 'Player';
   }
 
-  function showSound(id) { $('#soundboard').classList.remove('hidden'); }
-
   /* ---------------- home ---------------- */
   const saved = localStorage.getItem('bhabhi:nick') || '';
   if (saved) $('#nicknameInput').value = saved;
@@ -99,6 +96,7 @@
   function doJoin(roomId) {
     const nickname = $('#nicknameInput').value.trim();
     if (!nickname) { $('#homeError').textContent = 'Please enter a nickname.'; return; }
+    if (roomId === '') { $('#homeError').textContent = 'Please enter a room code.'; return; }
     localStorage.setItem('bhabhi:nick', nickname);
     APP.nickname = nickname;
     Soundboard.unlock();
@@ -126,7 +124,11 @@
   $('#createBtn').addEventListener('click', () => doJoin(null));
   $('#joinBtn').addEventListener('click', () => doJoin($('#roomInput').value.toUpperCase().trim()));
   $('#roomInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#joinBtn').click(); });
-  $('#nicknameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#createBtn').click(); });
+  $('#nicknameInput').addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    if ($('#joinPanel').classList.contains('hidden')) $('#createBtn').click();
+    else $('#joinBtn').click();
+  });
 
   const joinToggle = $('#joinToggleBtn');
   const joinPanel = $('#joinPanel');

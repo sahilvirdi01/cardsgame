@@ -13,9 +13,11 @@ W=480
 H=340
 FRAMES=12
 
-# make_gif <file> <text> <background> <color1> <color2>
+# make_gif <file> <text> <background> <color1> <color2> [output_dir]
 make_gif() {
   local file="$1" text="$2" bg="$3" c1="$4" c2="$5"
+  local dest="${6:-$OUT}"
+  mkdir -p "$dest"
   local dir="$TMP/$file"
   mkdir -p "$dir"
   for ((i=0;i<FRAMES;i++)); do
@@ -31,7 +33,7 @@ make_gif() {
       -stroke none \
       "png:$dir/f_$(printf '%03d' "$i").png"
   done
-  magick -delay 7 -loop 0 "$dir"/f_*.png -layers Optimize "$OUT/$file"
+  magick -delay 7 -loop 0 "$dir"/f_*.png -layers Optimize "$dest/$file"
   echo "  created $file"
 }
 
@@ -50,6 +52,11 @@ make_gif "bonk.gif"      "BONK!"    "#3d0b0b" "#ffdd57" "#ff6b6b"
 make_gif "ez.gif"        "EZ"       "#123b12" "#b6ff7a" "#ffffff"
 make_gif "sad.gif"       "SAD"      "#101820" "#7fb2ff" "#ffffff"
 make_gif "gigachad.gif"  "CHAD"     "#1a1a1a" "#d4af37" "#ffffff"
+
+# Bhabhi/loser GIFs shown on the game-over screen.
+make_gif "bhabhi.gif"        "BHABHI!"  "#4a0b12" "#ffd23f" "#ffffff" "$OUT/bhabhi"
+make_gif "bhabhi-cry.gif"    "SO SAD"   "#101820" "#7fb2ff" "#ffffff" "$OUT/bhabhi"
+make_gif "bhabhi-thulla.gif" "THULLA!"  "#140b2e" "#ff3b3b" "#ffd23f" "$OUT/bhabhi"
 
 # NOTE: this only writes the placeholder GIF art above. It deliberately does
 # NOT touch public/gifs/manifest.json, so your custom labels (and any GIFs you

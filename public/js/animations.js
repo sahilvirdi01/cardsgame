@@ -109,24 +109,6 @@
     thullaTimer = setTimeout(() => overlay.classList.add('hidden'), 2600);
   };
 
-  /* ---------------- flying card helper ---------------- */
-  Anim.fly = function (fromRect, toRect, cardData, container) {
-    const el = Anim.cardEl(cardData, { small: true });
-    el.style.position = 'fixed';
-    el.style.left = fromRect.left + 'px';
-    el.style.top = fromRect.top + 'px';
-    el.style.zIndex = 55;
-    el.style.transition = 'transform .42s cubic-bezier(.2,.8,.2,1), opacity .42s';
-    el.style.pointerEvents = 'none';
-    document.body.appendChild(el);
-    const dx = toRect.left - fromRect.left + (toRect.width - fromRect.width) / 2;
-    const dy = toRect.top - fromRect.top + (toRect.height - fromRect.height) / 2;
-    requestAnimationFrame(() => {
-      el.style.transform = `translate(${dx}px, ${dy}px) scale(.9) rotate(8deg)`;
-    });
-    setTimeout(() => el.remove(), 460);
-  };
-
   /* ---------------- card-flight helpers (pickup / sweep / saar draws) ---------------- */
 
   const FLY_CLASSES = ['anim-in-bottom', 'anim-in-top', 'anim-in-left', 'anim-in-right',
