@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>Bhabhi Cards — Online Card Game</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Cinzel:wght@400;500;600;700&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Bodoni+Moda:opsz,wght@6..96,400;6..96,500;6..96,600&family=Cormorant+Garamond:ital,wght@0,500;0,600;1,500&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -14,43 +14,48 @@
   <!-- ===================== HOME ===================== -->
   <section id="screen-home" class="screen active">
     <div class="home-bg" aria-hidden="true">
-      <div class="home-particles">
-        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
-      </div>
+      <span class="home-glyph home-glyph-a">♠</span>
+      <span class="home-glyph home-glyph-b">♥</span>
+      <span class="home-glyph home-glyph-c">♦</span>
+      <span class="home-glyph home-glyph-d">♣</span>
     </div>
 
-    <div class="home-wrap">
-      <header class="home-hero">
-        <div class="hero-ornament" aria-hidden="true">
-          <svg viewBox="0 0 460 30" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M8 15h148"/>
-            <path d="M156 15c12 0 16-9 28-9s16 9 28 9"/>
-            <path d="M248 15c12 0 16-9 28-9s16 9 28 9"/>
-            <path d="M304 15h148"/>
-            <path d="M230 2l10 13-10 13-10-13z"/>
-            <circle cx="230" cy="15" r="2"/>
-          </svg>
-        </div>
+    <div class="cover">
+      <div class="cover-meta">
+        <span>2&ndash;10 Players</span>
+        <span class="cover-issue">The Thulla Issue</span>
+        <span>Free &middot; Online</span>
+      </div>
 
-        <h1 class="game-title">BHABHI CARDS</h1>
-
-        <div class="hero-ornament flip" aria-hidden="true">
-          <svg viewBox="0 0 460 30" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M8 15h148"/>
-            <path d="M156 15c12 0 16-9 28-9s16 9 28 9"/>
-            <path d="M248 15c12 0 16-9 28-9s16 9 28 9"/>
-            <path d="M304 15h148"/>
-            <path d="M230 2l10 13-10 13-10-13z"/>
-            <circle cx="230" cy="15" r="2"/>
-          </svg>
-        </div>
-
-        <p class="tagline">The classic shedding game &middot; 2–10 players</p>
+      <header class="masthead">
+        <span class="masthead-the">The</span>
+        <h1 class="masthead-title">BHABHI</h1>
+        <p class="masthead-sub">Cards</p>
+        <div class="masthead-rule" aria-hidden="true"><span>◆</span></div>
+        <p class="masthead-note">The classic shedding game</p>
       </header>
+
+      <div class="cover-art" aria-hidden="true">
+        <div class="cover-card fan-left">
+          <div class="cc-corner">K<span>♥</span></div>
+          <div class="cc-pip red">♥</div>
+          <div class="cc-corner br">K<span>♥</span></div>
+        </div>
+        <div class="cover-card fan-mid">
+          <div class="cc-corner">A<span>♠</span></div>
+          <div class="cc-pip">♠</div>
+          <div class="cc-corner br">A<span>♠</span></div>
+        </div>
+        <div class="cover-card fan-right">
+          <div class="cc-corner">Q<span>♦</span></div>
+          <div class="cc-pip red">♦</div>
+          <div class="cc-corner br">Q<span>♦</span></div>
+        </div>
+      </div>
 
       <div class="home-card">
         <label class="home-nick">
-          <span>Your name</span>
+          <span>Your Name</span>
           <input id="nicknameInput" maxlength="16" placeholder="Enter nickname" autocomplete="off">
         </label>
 
@@ -66,12 +71,12 @@
 
         <div id="homeError" class="error-text"></div>
       </div>
-    </div>
 
-    <footer class="home-foot">
-      <span>v1.0</span>
-      <span class="foot-right">made by sahil virdi</span>
-    </footer>
+      <footer class="home-foot">
+        <span>Vol. I &middot; No. 1</span>
+        <span class="foot-right">made by sahil virdi</span>
+      </footer>
+    </div>
   </section>
 
   <!-- ===================== LOBBY ===================== -->
