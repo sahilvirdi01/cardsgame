@@ -599,6 +599,6 @@ server.on('error', (err) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  Bhabhi Thulla server running:`);
+  console.log(`\n  Bhabhi Cards server running:`);
   console.log(`    http://localhost:${PORT}\n`);
 });

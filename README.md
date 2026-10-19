@@ -1,4 +1,4 @@
-# Bhabhi Thulla 🃏
+# Bhabhi Cards 🃏
 
 A real-time multiplayer browser card game for the classic Indian shedding game **Bhabhi** (also known as **Thulla** or **Getaway**). Play with 2–10 friends in the same room — complete with peer-to-peer voice/video, a meme soundboard, GIF reactions and live chat.
 

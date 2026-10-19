@@ -1,7 +1,7 @@
 {
-  "name": "bhabhi-thulla",
+  "name": "bhabhi-cards",
   "version": "1.0.0",
-  "description": "Multiplayer browser card game (Bhabhi / Thulla / Getaway) with voice, video, soundboard and meme reactions.",
+  "description": "Bhabhi Cards — multiplayer browser card game (Bhabhi / Thulla / Getaway) with voice, video, soundboard and meme reactions.",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",

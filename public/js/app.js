@@ -128,6 +128,14 @@
   $('#roomInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#joinBtn').click(); });
   $('#nicknameInput').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('#createBtn').click(); });
 
+  const joinToggle = $('#joinToggleBtn');
+  const joinPanel = $('#joinPanel');
+  joinToggle.addEventListener('click', () => {
+    const open = joinPanel.classList.toggle('hidden') === false;
+    joinToggle.setAttribute('aria-expanded', String(open));
+    if (open) $('#roomInput').focus();
+  });
+
   /* ---------------- info overlays ---------------- */
   const openEl = (el) => el.classList.remove('hidden');
   const closeEl = (el) => el.classList.add('hidden');

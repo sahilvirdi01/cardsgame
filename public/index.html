@@ -3,9 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>Bhabhi Thulla — Online Card Game</title>
+<title>Bhabhi Cards — Online Card Game</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Cinzel:wght@400;500;600;700&family=Rubik:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -13,42 +13,71 @@
 
   <!-- ===================== HOME ===================== -->
   <section id="screen-home" class="screen active">
-    <div class="home-wrap">
-      <div class="logo">
-        <div class="logo-cards">
-          <div class="lc lc1">A<i>♠</i></div>
-          <div class="lc lc2">K<i>♥</i></div>
-          <div class="lc lc3">Q<i>♦</i></div>
-        </div>
-        <h1>BHABHI <span>THULLA</span></h1>
-        <p class="tagline">Play the classic shedding card game with friends. 2–10 players. Don't be the last one holding cards!</p>
+    <div class="home-bg" aria-hidden="true">
+      <div class="home-particles">
+        <i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
       </div>
+    </div>
+
+    <div class="home-wrap">
+      <header class="home-hero">
+        <div class="hero-ornament" aria-hidden="true">
+          <svg viewBox="0 0 460 30" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 15h148"/>
+            <path d="M156 15c12 0 16-9 28-9s16 9 28 9"/>
+            <path d="M248 15c12 0 16-9 28-9s16 9 28 9"/>
+            <path d="M304 15h148"/>
+            <path d="M230 2l10 13-10 13-10-13z"/>
+            <circle cx="230" cy="15" r="2"/>
+          </svg>
+        </div>
+
+        <h1 class="game-title">BHABHI CARDS</h1>
+
+        <div class="hero-ornament flip" aria-hidden="true">
+          <svg viewBox="0 0 460 30" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 15h148"/>
+            <path d="M156 15c12 0 16-9 28-9s16 9 28 9"/>
+            <path d="M248 15c12 0 16-9 28-9s16 9 28 9"/>
+            <path d="M304 15h148"/>
+            <path d="M230 2l10 13-10 13-10-13z"/>
+            <circle cx="230" cy="15" r="2"/>
+          </svg>
+        </div>
+
+        <p class="tagline">The classic shedding game &middot; 2–10 players</p>
+      </header>
 
       <div class="home-card">
-        <label class="field">
-          <span>Your nickname</span>
-          <input id="nicknameInput" maxlength="16" placeholder="e.g. AceOfSpades" autocomplete="off">
+        <label class="home-nick">
+          <span>Your name</span>
+          <input id="nicknameInput" maxlength="16" placeholder="Enter nickname" autocomplete="off">
         </label>
 
-        <button id="createBtn" class="btn btn-primary btn-lg">Create Room</button>
+        <nav class="home-menu" aria-label="Main menu">
+          <button id="createBtn" class="menu-item menu-primary">Start Game</button>
+          <button id="joinToggleBtn" class="menu-item" aria-expanded="false">Join Room</button>
+          <div id="joinPanel" class="join-panel hidden">
+            <input id="roomInput" maxlength="4" placeholder="CODE" autocomplete="off" class="code-input">
+            <button id="joinBtn" class="btn btn-primary">Join</button>
+          </div>
+          <button id="howBtn" class="menu-item">How to Play</button>
+        </nav>
 
-        <div class="divider"><span>or join with a code</span></div>
-
-        <div class="join-row">
-          <input id="roomInput" maxlength="4" placeholder="CODE" autocomplete="off" class="code-input">
-          <button id="joinBtn" class="btn">Join</button>
-        </div>
         <div id="homeError" class="error-text"></div>
       </div>
-
-      <button id="howBtn" class="btn btn-ghost">How to play</button>
     </div>
+
+    <footer class="home-foot">
+      <span>v1.0</span>
+      <span class="foot-right">made by sahil virdi</span>
+    </footer>
   </section>
 
   <!-- ===================== LOBBY ===================== -->
   <section id="screen-lobby" class="screen">
     <header class="topbar">
-      <div class="brand"><span class="dot"></span> Bhabhi Thulla</div>
+      <div class="brand"><span class="dot"></span> Bhabhi Cards</div>
       <div class="room-chip" id="lobbyRoomChip" title="Click to copy">CODE: <b id="lobbyRoomCode">----</b></div>
       <div class="top-actions">
         <button id="lobbyMicBtn" class="icon-btn" title="Toggle microphone">🎤</button>
@@ -120,7 +149,7 @@
   <!-- ===================== GAME ===================== -->
   <section id="screen-game" class="screen">
     <header class="topbar">
-      <div class="brand"><span class="dot"></span> Bhabhi Thulla</div>
+      <div class="brand"><span class="dot"></span> Bhabhi Cards</div>
       <div class="room-chip" id="gameRoomChip" title="Click to copy">ROOM • <b id="gameRoomCode">----</b></div>
       <div class="top-actions">
         <button id="howGameBtn" class="link-btn">How to play</button>
@@ -261,7 +290,7 @@
 
 <div id="howOverlay" class="overlay hidden">
   <div class="how-card">
-    <h2>How to play Bhabhi Thulla</h2>
+    <h2>How to play Bhabhi Cards</h2>
     <ul>
       <li><b>Goal:</b> empty your hand. The last player still holding cards is the <b>Bhabhi / Thulla</b> (loser).</li>
       <li>The holder of the <b>Ace of Spades</b> starts by playing it.</li>
